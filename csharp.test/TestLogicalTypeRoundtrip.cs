@@ -1,6 +1,8 @@
 using System;
+using System.IO;
 using System.Linq;
 using ParquetSharp.IO;
+using ParquetSharp.Schema;
 using NUnit.Framework;
 
 namespace ParquetSharp.Test
@@ -243,6 +245,134 @@ namespace ParquetSharp.Test
 
                 fileReader.Close();
             }
+        }
+
+        [Test]
+        public static void TestNestedStructArray([Values(Repetition.Required, Repetition.Optional)] Repetition structRepetition)
+        {
+            // Create a 2d int array
+            const int arraySize = 100;
+            int[]?[] values = new int[arraySize][];
+
+            for (var i = 0; i < arraySize; i++)
+            {
+                values[i] = (i % 3 == 0) ? null : Enumerable.Range(0, arraySize).ToArray();
+            }
+
+            using var buffer = new ResizableBuffer();
+
+            using (var output = new BufferOutputStream(buffer))
+            {
+                var element = new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32);
+                var list = new GroupNode("list", Repetition.Repeated, new[] { element });
+                var ids = new GroupNode("ids", Repetition.Optional, new[] { list }, LogicalType.List());
+                var outer = new GroupNode("struct", structRepetition, new[] { ids });
+                var schemaNode = new GroupNode("schema", Repetition.Required, new[] { outer });
+
+                using var builder = new WriterPropertiesBuilder();
+                using var fileWriter = new ParquetFileWriter(output, schemaNode, builder.Build());
+                using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
+
+                using var colWriter = rowGroupWriter.Column(0).LogicalWriter<int[]?>();
+                colWriter.WriteBatch(values);
+                fileWriter.Close();
+            }
+
+            using var input = new BufferReader(buffer);
+            using var fileReader = new ParquetFileReader(input);
+            using var rowGroupReader = fileReader.RowGroup(0);
+            using var colReader = rowGroupReader.Column(0).LogicalReader<int[]>();
+
+            Assert.AreEqual(values, colReader.ReadAll((int)rowGroupReader.MetaData.NumRows));
+
+            fileReader.Close();
+        }
+
+        [Test]
+        public static void TestNestedStructArrayOriginal()
+        {
+            var directory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            Assert.IsNotNull(directory);
+            var path = Path.Combine(directory!, "Artifacts/nested.parquet");
+
+            using var fileReader = new ParquetFileReader(path);
+
+            var rowGroupReader = fileReader.RowGroup(0);
+
+            var idsColumn = rowGroupReader.Column(0);
+            var idsColumnAsReader = idsColumn.LogicalReader<long?[]>();
+            var ids = idsColumnAsReader.ReadAll(3);
+
+            var msgColumn = rowGroupReader.Column(1);
+            var msgColumnAsReader = msgColumn.LogicalReader<string?>();
+            var msg = msgColumnAsReader.ReadAll(3);
+        }
+
+        [Test]
+        public static void TestNestedStructArrayMultipleFields()
+        {
+            var schemaNode = new GroupNode(
+                "schema",
+                Repetition.Required,
+                new Node[] {
+                    new GroupNode(
+                        "nested",
+                        Repetition.Optional,
+                        new Node[] {
+                            new GroupNode(
+                                "ids",
+                                Repetition.Optional,
+                                new Node[] {
+                                    new GroupNode(
+                                        "list",
+                                        Repetition.Repeated,
+                                        new Node[] {
+                                            new PrimitiveNode("item", Repetition.Optional, LogicalType.None(), PhysicalType.Int64)
+                                        }
+                                    )
+                                },
+                                LogicalType.List()
+                            ),
+                            new PrimitiveNode("msg", Repetition.Optional, LogicalType.String(), PhysicalType.ByteArray)
+                        }
+                    )
+                }
+            );
+
+            var ids = new Nested<long?[]>?[] { new Nested<long?[]>(new long?[] { 1, 2, 3 }), new Nested<long?[]>(new long?[] { 4, 5, 6 } )};
+            var msg = new Nested<string?>?[] { new Nested<string?>("hello"), new Nested<string?>("world") };
+
+            using var buffer = new ResizableBuffer();
+
+            using (var outStream = new BufferOutputStream(buffer))
+            {
+                var writerProperties = new WriterPropertiesBuilder().Build();
+                using var fileWriter = new ParquetFileWriter("C:\\users\\mtbnu\\coding\\parquet.parquet"/*outStream*/, schemaNode, writerProperties);
+                using var rowGroupWriter = fileWriter.AppendRowGroup();
+
+                using var idColWriter = rowGroupWriter.NextColumn().LogicalWriter<Nested<long?[]>?>();
+                idColWriter.WriteBatch(ids);
+
+                using var msgColWriter = rowGroupWriter.NextColumn().LogicalWriter<Nested<string?>?>();
+                msgColWriter.WriteBatch(msg);
+
+                fileWriter.Close();
+            }
+
+            // Read it back.
+            using var inStream = new BufferReader(buffer);
+            using var fileReader2 = new ParquetFileReader(inStream);
+            using var rowGroup = fileReader2.RowGroup(0);
+
+            var idsColumn2 = rowGroup.Column(0);
+            var idsColumnReader2 = idsColumn2.LogicalReader<long?[]>();
+            var ids2 = idsColumnReader2.ReadAll(2);
+            Assert.IsNotEmpty(ids2);
+
+            var msgColumn2 = rowGroup.Column(1);
+            var msgColumnReader2 = msgColumn2.LogicalReader<string>();
+            var msg2 = msgColumnReader2.ReadAll(2);
+            Assert.IsNotEmpty(msg2);
         }
 
         [Test]
