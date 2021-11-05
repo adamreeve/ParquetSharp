@@ -13,11 +13,6 @@ namespace ParquetSharp
             BufferLength = bufferLength;
             LogicalType = descriptor.LogicalType;
 
-            if (elementType != typeof(byte[]) && elementType.IsArray)
-            {
-                ArraySchemaNodes = GetSchemaNode(ColumnDescriptor.SchemaNode).ToArray();
-            }
-
             Buffer = Array.CreateInstance(physicalType, bufferLength);
             DefLevels = descriptor.MaxDefinitionLevel == 0 ? null : new short[bufferLength];
             RepLevels = descriptor.MaxRepetitionLevel == 0 ? null : new short[bufferLength];
@@ -38,7 +33,7 @@ namespace ParquetSharp
             return type;
         }
 
-        private static List<Schema.Node> GetSchemaNode(Schema.Node node)
+        protected static List<Schema.Node> GetSchemaNode(Schema.Node node)
         {
             var schemaNodes = new List<Schema.Node>();
             for (var n = node; n != null; n = n.Parent)
@@ -58,7 +53,5 @@ namespace ParquetSharp
         protected readonly Array Buffer;
         protected readonly short[]? DefLevels;
         protected readonly short[]? RepLevels;
-
-        protected readonly Schema.Node[]? ArraySchemaNodes;
     }
 }

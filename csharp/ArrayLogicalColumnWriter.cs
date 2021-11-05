@@ -18,12 +18,12 @@ namespace ParquetSharp
             _converter = (LogicalWrite<TLogical, TPhysical>.Converter) columnWriter
                 .LogicalWriteConverterFactory.GetConverter<TLogical, TPhysical>(ColumnDescriptor, _byteBuffer);
 
-            if (typeof(TElement) == typeof(byte[]) || !typeof(TElement).IsArray)
-            {
-                throw new Exception("unexpected");
-            }
+            //if (typeof(TElement) == typeof(byte[]) || !typeof(TElement).IsArray)
+            //{
+            //    throw new Exception("unexpected");
+            //}
 
-            _writer = WriteArray(ArraySchemaNodes!, typeof(TElement), 0, 0, 0);
+            _writer = MakeWriterTopLevel(GetSchemaNode(ColumnDescriptor.SchemaNode).ToArray(), typeof(TElement), 0, 0, 0);
         }
 
         public override void Dispose()
@@ -38,8 +38,22 @@ namespace ParquetSharp
             _writer(values.ToArray());
         }
 
-        private Action<Array> WriteArray(Node[] schemaNodes, Type elementType, short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
+        private Action<Array> MakeWriterTopLevel(Node[] schemaNodes, Type elementType, short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
         {
+            if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable))
+            {
+                var innerNullable = elementType.GetGenericArguments().Single();
+
+                if (schemaNodes.Length >= 1 &&
+                    schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Optional } &&
+                    IsNested(innerElementType))
+                {
+
+                }
+
+                throw new Exception("elementType is nested but schema does not match expected layout");
+            }
+
             if (elementType.IsArray && elementType != typeof(byte[]))
             {
                 if (schemaNodes.Length >= 2 &&
@@ -73,12 +87,26 @@ namespace ParquetSharp
             throw new Exception("ParquetSharp does not understand the schema used");
         }
 
+        private static bool IsNullable(Type type, out Type inner)
+        {
+            if (!type.IsGenericType || type.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                inner = null!;
+                return false;
+            }
+            inner = type.GetGenericArguments().Single();
+            return true;
+        }
+
+        private static bool IsNested(Type type) =>
+            type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nested<>);
+
         private Action<Array> WriteArrayIntermediateLevel(Node[] schemaNodes, Type elementType, short nullDefinitionLevel, short repetitionLevel, short firstLeafRepLevel)
         {
             var columnWriter = (ColumnWriter<TPhysical>)Source;
 
-            var writer0 = WriteArray(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), firstLeafRepLevel);
-            var writer = WriteArray(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), repetitionLevel);
+            var writer0 = MakeWriterTopLevel(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), firstLeafRepLevel);
+            var writer = MakeWriterTopLevel(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), repetitionLevel);
 
             return values =>
             {

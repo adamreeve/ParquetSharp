@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Runtime.InteropServices;
 
@@ -67,18 +68,50 @@ namespace ParquetSharp
         public (Type physicalType, Type logicalType, Type elementType) GetSystemTypes(LogicalTypeFactory typeFactory, Type? columnLogicalTypeOverride)
         {
             var (physicalType, logicalType) = typeFactory.GetSystemTypes(this, columnLogicalTypeOverride);
-            var elementType = logicalType;
+            var elementType = NonNullable(logicalType);
 
             for (var node = SchemaNode; node != null; node = node.Parent)
             {
-                if (node.LogicalType.Type == LogicalTypeEnum.List)
+                if (node.Repetition == Repetition.Repeated)
                 {
+                    // - "The middle level, named list, must be a repeated group with a single field named element."
+                    //   The middle level being this.
+                    // - "The outer-most level must be a group annotated with LIST that contains a single field named list.
+                    //   The repetition of this level must be either optional or required and determines whether the list is nullable."
+                    //   Arrays are automatically nullable, so skip over it.
+                    if (node.Parent == null
+                        || node.Parent.LogicalType.Type != LogicalTypeEnum.List
+                        || node.Parent.Repetition is not (Repetition.Optional or Repetition.Required))
+                    {
+                        throw new Exception("Schema not according to Parquet spec");
+                    }
                     elementType = elementType.MakeArrayType();
+                    node = node.Parent; // skip the outer level
+                }
+                else if (node.Repetition == Repetition.Optional)
+                {
+                    if (node is Schema.GroupNode)
+                    {
+                        elementType = typeof(Nested<>).MakeGenericType(elementType);
+                    }
+                    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    // TODO: Skip if elementType is a reference type?
+                    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    elementType = elementType.BaseType != typeof(object) && elementType.BaseType != typeof(Array) ?
+                        typeof(Nullable<>).MakeGenericType(elementType) : elementType;
+                }
+                else if (node is Schema.GroupNode && node.Parent != null)
+                {
+                    // TODO: Skip if elementType is a reference type?
+                    elementType = typeof(Nested<>).MakeGenericType(elementType);
                 }
             }
 
             return (physicalType, logicalType, elementType);
         }
+
+        private static Type NonNullable(Type type) =>
+            type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>) ? type.GetGenericArguments().Single() : type;
 
         [DllImport(ParquetDll.Name)]
         private static extern IntPtr ColumnDescriptor_Max_Definition_Level(IntPtr columnDescriptor, out short maxDefinitionLevel);

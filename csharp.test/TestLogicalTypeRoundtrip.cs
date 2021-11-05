@@ -252,11 +252,11 @@ namespace ParquetSharp.Test
         {
             // Create a 2d int array
             const int arraySize = 100;
-            int[]?[] values = new int[arraySize][];
+            var values = new Nested<int[]>?[arraySize];
 
             for (var i = 0; i < arraySize; i++)
             {
-                values[i] = (i % 3 == 0) ? null : Enumerable.Range(0, arraySize).ToArray();
+                values[i] = (i % 3 == 0) ? null : new Nested<int[]>(Enumerable.Range(0, arraySize).ToArray());
             }
 
             using var buffer = new ResizableBuffer();
@@ -273,7 +273,7 @@ namespace ParquetSharp.Test
                 using var fileWriter = new ParquetFileWriter(output, schemaNode, builder.Build());
                 using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
 
-                using var colWriter = rowGroupWriter.Column(0).LogicalWriter<int[]?>();
+                using var colWriter = rowGroupWriter.Column(0).LogicalWriter<Nested<int[]>?>();
                 colWriter.WriteBatch(values);
                 fileWriter.Close();
             }

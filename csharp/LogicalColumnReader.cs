@@ -130,6 +130,8 @@ namespace ParquetSharp
             _bufferedReader = new BufferedReader<TPhysical>(Source, (TPhysical[]) Buffer, DefLevels, RepLevels);
             _directReader = (LogicalRead<TLogical, TPhysical>.DirectReader?) converterFactory.GetDirectReader<TLogical, TPhysical>();
             _converter = (LogicalRead<TLogical, TPhysical>.Converter) converterFactory.GetConverter<TLogical, TPhysical>(ColumnDescriptor, columnReader.ColumnChunkMetaData);
+
+            ArraySchemaNodes = GetSchemaNode(ColumnDescriptor.SchemaNode).ToArray();
         }
 
         public override int ReadBatch(Span<TElement> destination)
@@ -321,5 +323,6 @@ namespace ParquetSharp
         private readonly BufferedReader<TPhysical> _bufferedReader;
         private readonly LogicalRead<TLogical, TPhysical>.DirectReader? _directReader;
         private readonly LogicalRead<TLogical, TPhysical>.Converter _converter;
+        private readonly Node[] ArraySchemaNodes;
     }
 }
