@@ -15,12 +15,15 @@ namespace ParquetSharp
                 : null;
 
             // Convert logical values into physical values at the lowest array level
-            _converter = (LogicalWrite<TLogical, TPhysical>.Converter)columnWriter.LogicalWriteConverterFactory.GetConverter<TLogical, TPhysical>(ColumnDescriptor, _byteBuffer);
+            _converter = (LogicalWrite<TLogical, TPhysical>.Converter) columnWriter
+                .LogicalWriteConverterFactory.GetConverter<TLogical, TPhysical>(ColumnDescriptor, _byteBuffer);
 
             if (typeof(TElement) == typeof(byte[]) || !typeof(TElement).IsArray)
             {
                 throw new Exception("unexpected");
             }
+
+            _writer = WriteArray(ArraySchemaNodes!, typeof(TElement), 0, 0, 0);
         }
 
         public override void Dispose()
@@ -32,7 +35,7 @@ namespace ParquetSharp
 
         public override void WriteBatch(ReadOnlySpan<TElement> values)
         {
-            WriteArray(ArraySchemaNodes!, typeof(TElement), 0, 0, 0)(values.ToArray());
+            _writer(values.ToArray());
         }
 
         private Action<Array> WriteArray(Node[] schemaNodes, Type elementType, short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
@@ -74,8 +77,8 @@ namespace ParquetSharp
         {
             var columnWriter = (ColumnWriter<TPhysical>)Source;
 
-            //var writer0 = WriteArray(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), repetitionLevel);
-            //var writer = WriteArray(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), firstLeafRepLevel;
+            var writer0 = WriteArray(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), firstLeafRepLevel);
+            var writer = WriteArray(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), repetitionLevel);
 
             return values =>
             {
@@ -94,8 +97,7 @@ namespace ParquetSharp
                         if (a.Length > 0)
                         {
                             // We have a positive length array, call the top level array writer on its values
-                            (i > 0 ? WriteArray(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), repetitionLevel)
-                            : WriteArray(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), firstLeafRepLevel))(a);
+                            (i > 0 ? writer : writer0)(a);
                         }
                         else
                         {
@@ -165,6 +167,7 @@ namespace ParquetSharp
 
         private readonly ByteBuffer? _byteBuffer;
         private readonly LogicalWrite<TLogical, TPhysical>.Converter _converter;
+        private readonly Action<Array> _writer;
     }
 
     internal interface IBatchWriter<TElement>
