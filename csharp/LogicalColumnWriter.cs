@@ -68,20 +68,8 @@ namespace ParquetSharp
                 {
                     return new LeafLogicalColumnWriter<TPhysical, TLogical, TElement>(_columnWriter, _bufferLength);
                 }
-                return new ArrayLogicalColumnWriter<TPhysical, TLogical, TElement>(_columnWriter, _bufferLength);
+                return new CompoundLogicalColumnWriter<TPhysical, TLogical, TElement>(_columnWriter, _bufferLength);
             }
-
-            private static bool IsCompoundType(Type elementType)
-            {
-                elementType = NonNullable(elementType);
-                return IsNested(elementType) || elementType.IsArray;
-            }
-
-            private static bool IsNested(Type type) =>
-                type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nested<>);
-
-            private static Type NonNullable(Type type) =>
-                type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>) ? type.GetGenericArguments().Single() : type;
 
             private readonly ColumnWriter _columnWriter;
             private readonly int _bufferLength;

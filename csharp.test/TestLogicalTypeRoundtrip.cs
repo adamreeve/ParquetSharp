@@ -300,7 +300,7 @@ namespace ParquetSharp.Test
             var rowGroupReader = fileReader.RowGroup(0);
 
             var idsColumn = rowGroupReader.Column(0);
-            var idsColumnAsReader = idsColumn.LogicalReader<long?[]>();
+            var idsColumnAsReader = idsColumn.LogicalReader<Nested<long?[]>?>();
             var ids = idsColumnAsReader.ReadAll(3);
 
             var msgColumn = rowGroupReader.Column(1);

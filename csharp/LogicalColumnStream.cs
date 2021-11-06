@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ParquetSharp
 {
@@ -44,6 +45,18 @@ namespace ParquetSharp
             schemaNodes.Reverse(); // root to leaf
             return schemaNodes;
         }
+
+        protected static bool IsCompoundType(Type elementType)
+        {
+            elementType = NonNullable(elementType);
+            return IsNested(elementType) || elementType.IsArray;
+        }
+
+        private static bool IsNested(Type type) =>
+            type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nested<>);
+
+        private static Type NonNullable(Type type) =>
+            type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>) ? type.GetGenericArguments().Single() : type;
 
         public TSource Source { get; }
         public ColumnDescriptor ColumnDescriptor { get; }
