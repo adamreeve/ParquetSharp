@@ -34,6 +34,28 @@ namespace ParquetSharp
             return type;
         }
 
+        protected static bool IsNullable(Type type, out Type inner)
+        {
+            if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(Nullable<>))
+            {
+                inner = null!;
+                return false;
+            }
+            inner = type.GetGenericArguments().Single();
+            return true;
+        }
+
+        protected static bool IsNested(Type type, out Type inner)
+        {
+            if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(Nested<>))
+            {
+                inner = null!;
+                return false;
+            }
+            inner = type.GetGenericArguments().Single();
+            return true;
+        }
+
         protected static List<Schema.Node> GetSchemaNode(Schema.Node node)
         {
             var schemaNodes = new List<Schema.Node>();
@@ -49,11 +71,8 @@ namespace ParquetSharp
         protected static bool IsCompoundType(Type elementType)
         {
             elementType = NonNullable(elementType);
-            return IsNested(elementType) || elementType.IsArray;
+            return IsNested(elementType, out _) || elementType.IsArray;
         }
-
-        private static bool IsNested(Type type) =>
-            type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nested<>);
 
         private static Type NonNullable(Type type) =>
             type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>) ? type.GetGenericArguments().Single() : type;

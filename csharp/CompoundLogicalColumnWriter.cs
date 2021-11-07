@@ -40,10 +40,8 @@ namespace ParquetSharp
 
         private Action<Array> MakeWriter(Node[] schemaNodes, Type elementType, short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
         {
-            if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable))
+            if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable, out var innerNested))
             {
-                var innerNested = innerNullable.GetGenericArguments().Single();
-
                 if (schemaNodes.Length >= 1 &&
                     schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Optional })
                 {
@@ -86,20 +84,6 @@ namespace ParquetSharp
 
             throw new Exception("ParquetSharp does not understand the schema used");
         }
-
-        private static bool IsNullable(Type type, out Type inner)
-        {
-            if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(Nullable<>))
-            {
-                inner = null!;
-                return false;
-            }
-            inner = type.GetGenericArguments().Single();
-            return true;
-        }
-
-        private static bool IsNested(Type type) =>
-            type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nested<>);
 
         private Action<Array> MakeArrayWriter(Node[] schemaNodes, Type elementType, short nullDefinitionLevel, short repetitionLevel, short firstLeafRepLevel)
         {

@@ -13,11 +13,33 @@ namespace ParquetSharp
         {
             var converterFactory = columnReader.LogicalReadConverterFactory;
 
+            if (RepLevelsRequired(typeof(TElement)) && RepLevels == null)
+            {
+                throw new Exception("RepLevels are required but missing");
+            }
+
             _bufferedReader = new BufferedReader<TPhysical>(Source, (TPhysical[]) Buffer, DefLevels, RepLevels);
             _converter = (LogicalRead<TLogical, TPhysical>.Converter) converterFactory
                 .GetConverter<TLogical, TPhysical>(ColumnDescriptor, columnReader.ColumnChunkMetaData);
 
-            _reader = MakeReader(GetSchemaNode(ColumnDescriptor.SchemaNode).ToArray(), typeof(TElement), 0, 0);
+            _reader = MakeReader(GetSchemaNode(ColumnDescriptor.SchemaNode).ToArray(), typeof(TElement), 0, 0, false);
+        }
+
+        private static bool RepLevelsRequired(Type type)
+        {
+            if (type.IsArray)
+            {
+                return true;
+            }
+            if (IsNullable(type, out var innerTypeNullable))
+            {
+                return RepLevelsRequired(innerTypeNullable);
+            }
+            if (IsNested(type, out var innerTypeNested))
+            {
+                return RepLevelsRequired(innerTypeNested);
+            }
+            return false;
         }
 
         public override int ReadBatch(Span<TElement> destination)
@@ -29,8 +51,22 @@ namespace ParquetSharp
             return result.Length;
         }
 
-        private Func<int, Array> MakeReader(Node[] schemaNodes, Type elementType, int repetitionLevel, int nullDefinitionLevel)
+        private Func<int, Array> MakeReader(Node[] schemaNodes, Type elementType, int repetitionLevel, int nullDefinitionLevel, bool wantSingleItem)
         {
+            if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable, out _))
+            {
+                var innerNested = innerNullable.GetGenericArguments().Single();
+
+                if (schemaNodes.Length >= 1 &&
+                    schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Optional })
+                {
+                    return MakeGenericReader(nameof(MakeNestedOptionalReader), innerNested, schemaNodes.Skip(1).ToArray(),
+                        repetitionLevel, nullDefinitionLevel);
+                }
+
+                throw new Exception("elementType is nested but schema does not match expected layout");
+            }
+
             if (elementType.IsArray && elementType != typeof(byte[]))
             {
                 if (schemaNodes.Length >= 2 &&
@@ -47,25 +83,76 @@ namespace ParquetSharp
             {
                 bool optional = schemaNodes[0].Repetition == Repetition.Optional;
 
-                var leafReader = MakeLeafReader(optional, (short)repetitionLevel, (short)nullDefinitionLevel);
-
-                return numElementsToRead =>
+                if (wantSingleItem)
                 {
-                    if (numElementsToRead != -1)
+                    var leafReader = MakeLeafReaderSingle(optional, (short)repetitionLevel, (short)nullDefinitionLevel);
+
+                    return numElementsToRead =>
                     {
-                        throw new Exception("numElementsToRead should be -1");
-                    }
-                    return leafReader();
-                };
+                        if (numElementsToRead != 1)
+                        {
+                            throw new Exception("numElementsToRead should be 1");
+                        }
+                        return leafReader();
+                    };
+                }
+                else
+                {
+                    var leafReader = MakeLeafReader(optional, (short)repetitionLevel, (short)nullDefinitionLevel);
+
+                    return numElementsToRead =>
+                    {
+                        if (numElementsToRead != -1)
+                        {
+                            throw new Exception("numElementsToRead should be -1");
+                        }
+                        return leafReader();
+                    };
+                }
             }
 
             throw new Exception("ParquetSharp does not understand the schema used");
         }
 
+        private Func<int, Array> MakeNestedOptionalReader<TInner>(Node[] schemaNodes, int repetitionLevel, int nullDefinitionLevel)
+        {
+            var innerReader = MakeReader(schemaNodes, typeof(TInner), repetitionLevel, nullDefinitionLevel + 1, true);
+
+            return numArrayEntriesToRead =>
+            {
+                var acc = new List<Nested<TInner>?>();
+
+                while (numArrayEntriesToRead == -1 || acc.Count < numArrayEntriesToRead)
+                {
+                    var defn = _bufferedReader.GetCurrentDefinition();
+
+                    Nested<TInner>? newItem = null;
+
+                    if (defn.DefLevel > nullDefinitionLevel)
+                    {
+                        newItem = new Nested<TInner>(((TInner[]) innerReader(1))[0]);
+                    }
+                    else
+                    {
+                        _bufferedReader.NextDefinition();
+                    }
+
+                    acc.Add(newItem);
+
+                    if (_bufferedReader.IsEofDefinition || (RepLevels != null && _bufferedReader.GetCurrentDefinition().RepLevel < repetitionLevel))
+                    {
+                        break;
+                    }
+                }
+
+                return acc.ToArray();
+            };
+        }
+
         private Func<int, Array> MakeArrayReader(Node[] schemaNodes, 
             Type elementType, short repetitionLevel, short nullDefinitionLevel)
         {
-            var innerReader = MakeReader(schemaNodes.Skip(2).ToArray(), elementType.GetElementType(), repetitionLevel + 1, nullDefinitionLevel + 2);
+            var innerReader = MakeReader(schemaNodes.Skip(2).ToArray(), elementType.GetElementType(), repetitionLevel + 1, nullDefinitionLevel + 2, false);
 
             return numArrayEntriesToRead =>
             {
@@ -141,6 +228,35 @@ namespace ParquetSharp
             };
         }
 
+        private Func<Array> MakeLeafReaderSingle(bool optional, short repetitionLevel, short nullDefinitionLevel)
+        {
+            return () =>
+            {
+                var defnLevel = new List<short>();
+                var values = new List<TPhysical>();
+
+                var defn = _bufferedReader.GetCurrentDefinition();
+
+                if (defn.DefLevel < nullDefinitionLevel)
+                {
+                    throw new Exception("Invalid input stream.");
+                }
+
+                if (defn.DefLevel > nullDefinitionLevel || !optional)
+                {
+                    values.Add(_bufferedReader.ReadValue());
+                }
+
+                defnLevel.Add(defn.DefLevel);
+
+                _bufferedReader.NextDefinition();
+
+                var dest = new TLogical[defnLevel.Count];
+                _converter(values.ToArray(), defnLevel.ToArray(), dest, nullDefinitionLevel);
+                return dest;
+            };
+        }
+
         private static Array ListToArray(List<Array?> list, Type elementType)
         {
             var result = Array.CreateInstance(elementType, list.Count);
@@ -161,6 +277,14 @@ namespace ParquetSharp
             }
 
             throw new ArgumentException(nameof(elementType));
+        }
+
+        private Func<int, Array> MakeGenericReader(string name, Type type, Node[] schemaNodes, int repetitionLevel, int nullDefinitionLevel)
+        {
+            var iface = typeof(CompoundLogicalColumnReader<TPhysical, TLogical, TElement>);
+            var genericMethod = iface.GetMethod(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            return (Func<int, Array>)genericMethod.MakeGenericMethod(type).Invoke(this, new object[] {
+                schemaNodes, repetitionLevel, nullDefinitionLevel });
         }
 
         private readonly BufferedReader<TPhysical> _bufferedReader;
