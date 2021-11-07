@@ -25,23 +25,6 @@ namespace ParquetSharp
             _reader = MakeReader(GetSchemaNode(ColumnDescriptor.SchemaNode).ToArray(), typeof(TElement), 0, 0, false);
         }
 
-        private static bool RepLevelsRequired(Type type)
-        {
-            if (type.IsArray)
-            {
-                return true;
-            }
-            if (IsNullable(type, out var innerTypeNullable))
-            {
-                return RepLevelsRequired(innerTypeNullable);
-            }
-            if (IsNested(type, out var innerTypeNested))
-            {
-                return RepLevelsRequired(innerTypeNested);
-            }
-            return false;
-        }
-
         public override int ReadBatch(Span<TElement> destination)
         {
             var result = (Span<TElement>) (TElement[]) _reader(destination.Length);

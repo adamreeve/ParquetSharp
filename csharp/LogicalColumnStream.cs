@@ -24,6 +24,23 @@ namespace ParquetSharp
             Source.Dispose();
         }
 
+        protected static bool RepLevelsRequired(Type type)
+        {
+            if (type.IsArray)
+            {
+                return true;
+            }
+            if (IsNullable(type, out var innerTypeNullable))
+            {
+                return RepLevelsRequired(innerTypeNullable);
+            }
+            if (IsNested(type, out var innerTypeNested))
+            {
+                return RepLevelsRequired(innerTypeNested);
+            }
+            return false;
+        }
+
         protected static Type? GetLeafElementType(Type? type)
         {
             while (type != null && type != typeof(byte[]) && type.IsArray)

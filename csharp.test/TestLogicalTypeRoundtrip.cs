@@ -353,15 +353,27 @@ namespace ParquetSharp.Test
                 }
             );
 
-            var ids = new Nested<long?[]>?[] { new Nested<long?[]>(new long?[] { 1, 2, 3 }), new Nested<long?[]>(new long?[] { 4, 5, 6 } )};
-            var msg = new Nested<string?>?[] { new Nested<string?>("hello"), new Nested<string?>("world") };
+            var ids = new Nested<long?[]>? []
+            {
+                new Nested<long?[]>(new long?[] { 1, 2, 3 }),
+                new Nested<long?[]>(new long?[] { 4, 5, 6 }),
+                new Nested<long?[]>(null!),
+                null
+            };
+            var msg = new Nested<string?>?[]
+            {
+                new Nested<string?>("hello"),
+                new Nested<string?>("world"),
+                new Nested<string?>(null),
+                null
+            };
 
             using var buffer = new ResizableBuffer();
 
             using (var outStream = new BufferOutputStream(buffer))
             {
                 var writerProperties = new WriterPropertiesBuilder().Build();
-                using var fileWriter = new ParquetFileWriter("C:\\users\\mtbnu\\coding\\parquet.parquet"/*outStream*/, schemaNode, writerProperties);
+                using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
                 using var rowGroupWriter = fileWriter.AppendRowGroup();
 
                 using var idColWriter = rowGroupWriter.NextColumn().LogicalWriter<Nested<long?[]>?>();
@@ -379,14 +391,30 @@ namespace ParquetSharp.Test
             using var rowGroup = fileReader2.RowGroup(0);
 
             var idsColumn2 = rowGroup.Column(0);
-            var idsColumnReader2 = idsColumn2.LogicalReader<long?[]>();
-            var ids2 = idsColumnReader2.ReadAll(2);
+            var idsColumnReader2 = idsColumn2.LogicalReader<Nested<long?[]>?>();
+            var ids2 = idsColumnReader2.ReadAll(4);
             Assert.IsNotEmpty(ids2);
+            Assert.AreEqual(4, ids2.Length);
+            Assert.IsTrue(ids2[0].HasValue);
+            Assert.AreEqual(ids2[0]!.Value.Value, new long?[] { 1, 2, 3 });
+            Assert.IsTrue(ids2[1].HasValue);
+            Assert.AreEqual(ids2[1]!.Value.Value, new long?[] { 4, 5, 6 });
+            Assert.IsTrue(ids2[2].HasValue);
+            Assert.IsNull(ids2[2]!.Value.Value);
+            Assert.IsFalse(ids2[3].HasValue);
 
             var msgColumn2 = rowGroup.Column(1);
-            var msgColumnReader2 = msgColumn2.LogicalReader<string>();
-            var msg2 = msgColumnReader2.ReadAll(2);
+            var msgColumnReader2 = msgColumn2.LogicalReader<Nested<string?>?>();
+            var msg2 = msgColumnReader2.ReadAll(4);
             Assert.IsNotEmpty(msg2);
+            Assert.AreEqual(4, msg2.Length);
+            Assert.IsTrue(msg2[0].HasValue);
+            Assert.AreEqual(msg2[0]!.Value.Value, "hello");
+            Assert.IsTrue(msg2[1].HasValue);
+            Assert.AreEqual(msg2[1]!.Value.Value, "world");
+            Assert.IsTrue(msg2[2].HasValue);
+            Assert.IsNull(msg2[2]!.Value.Value);
+            Assert.IsFalse(msg2[3].HasValue);
         }
 
         [Test]

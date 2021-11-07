@@ -23,7 +23,12 @@ namespace ParquetSharp
             //    throw new Exception("unexpected");
             //}
 
-            _writer = MakeWriter(GetSchemaNode(ColumnDescriptor.SchemaNode).ToArray(), typeof(TElement), 0, 0, 0);
+            if (RepLevelsRequired(typeof(TElement)) && RepLevels == null)
+            {
+                throw new Exception("RepLevels are required but missing");
+            }
+
+            _writer = MakeWriter(GetSchemaNode(ColumnDescriptor.SchemaNode).ToArray(), typeof(TElement), 0, 0, 0, false);
         }
 
         public override void Dispose()
@@ -38,7 +43,8 @@ namespace ParquetSharp
             _writer(values.ToArray());
         }
 
-        private Action<Array> MakeWriter(Node[] schemaNodes, Type elementType, short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
+        private Action<Array> MakeWriter(Node[] schemaNodes, Type elementType, short repetitionLevel,
+            short nullDefinitionLevel, short firstLeafRepLevel, bool singleItem)
         {
             if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable, out var innerNested))
             {
@@ -79,7 +85,14 @@ namespace ParquetSharp
                 short leafDefinitionLevel = isOptional ? (short)(nullDefinitionLevel + 1) : nullDefinitionLevel;
                 short leafNullDefinitionLevel = isOptional ? nullDefinitionLevel : (short)-1;
 
-                return MakeLeafWriter(repetitionLevel, firstLeafRepLevel, leafDefinitionLevel, leafNullDefinitionLevel);
+                if (singleItem)
+                {
+                    return MakeLeafWriterSingle(repetitionLevel, firstLeafRepLevel, leafDefinitionLevel, leafNullDefinitionLevel);
+                }
+                else
+                {
+                    return MakeLeafWriter(repetitionLevel, firstLeafRepLevel, leafDefinitionLevel, leafNullDefinitionLevel);
+                }
             }
 
             throw new Exception("ParquetSharp does not understand the schema used");
@@ -89,8 +102,8 @@ namespace ParquetSharp
         {
             var columnWriter = (ColumnWriter<TPhysical>)Source;
 
-            var writer0 = MakeWriter(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), firstLeafRepLevel);
-            var writer = MakeWriter(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), repetitionLevel);
+            var writer0 = MakeWriter(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), firstLeafRepLevel, false);
+            var writer = MakeWriter(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), repetitionLevel, false);
 
             return values =>
             {
@@ -133,8 +146,14 @@ namespace ParquetSharp
             short repetitionLevel, short leafFirstRepLevel,
             short leafDefinitionLevel, short nullDefinitionLevel)
         {
-            if (DefLevels == null) throw new InvalidOperationException("DefLevels should not be null.");
-            if (RepLevels == null) throw new InvalidOperationException("RepLevels should not be null.");
+            if (DefLevels == null)
+            {
+                throw new InvalidOperationException("DefLevels should not be null.");
+            }
+            if (RepLevels == null)
+            {
+                throw new InvalidOperationException("RepLevels should not be null.");
+            }
 
             var columnWriter = (ColumnWriter<TPhysical>)Source;
             var buffer = (TPhysical[])Buffer;
@@ -177,32 +196,70 @@ namespace ParquetSharp
             };
         }
 
+        private Action<Array> MakeLeafWriterSingle(
+            short repetitionLevel, short leafFirstRepLevel,
+            short leafDefinitionLevel, short nullDefinitionLevel)
+        {
+            if (DefLevels == null)
+            {
+                throw new InvalidOperationException("DefLevels should not be null.");
+            }
+
+            var columnWriter = (ColumnWriter<TPhysical>)Source;
+            var buffer = (TPhysical[])Buffer;
+
+            return values =>
+            {
+                ReadOnlySpan<TLogical> valuesSpan = (TLogical[])values;
+
+                if (valuesSpan.Length != 1)
+                {
+                    throw new Exception("expected only single item");
+                }
+
+                _converter(valuesSpan, DefLevels, buffer, nullDefinitionLevel);
+
+                // If the leaves are required, we have to write the deflevel because the converter won't do this for us.
+                if (nullDefinitionLevel == -1)
+                {
+                    DefLevels[0] = leafDefinitionLevel;
+                }
+
+                columnWriter.WriteBatch(1, DefLevels, RepLevels, buffer);
+
+                _byteBuffer?.Clear();
+            };
+        }
+
         // Writes a Nested<TInner>?[] array
         private Action<Array> MakeOptionalNestedWriter<TInner>(Node[] schemaNodes, 
             short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
         {
             var columnWriter = (ColumnWriter<TPhysical>)Source;
 
+            var writer0 = MakeWriter(schemaNodes, typeof(TInner), repetitionLevel,
+                (short)(nullDefinitionLevel + 1), firstLeafRepLevel, true);
+            var writer = MakeWriter(schemaNodes, typeof(TInner), repetitionLevel,
+                (short)(nullDefinitionLevel + 1), repetitionLevel, true);
+
             return array =>
             {
                 var items = (Nested<TInner>?[])array;
 
-                for (var i = 0; i < items.Length; )//i++)
+                for (var i = 0; i < items.Length; i++)
                 {
                     var item = items[i];
 
                     if (item.HasValue)
                     {
                         // We have a positive length array, call the top level array writer on its values
-                        //(i > 0 ? writer : writer0)(a);
-                        throw new NotImplementedException();
+                        (i > 0 ? writer : writer0)(new[] { item.Value.Value });
                     }
                     else
                     {
                         // Write that this item is null
-                        //columnWriter.WriteBatchSpaced(1, new[] { nullDefinitionLevel }, new[] { currentLeafRepLevel }, new byte[] { 0 }, 0, new TPhysical[] { });
-
-                        throw new NotImplementedException();
+                        columnWriter.WriteBatchSpaced(1, new[] { nullDefinitionLevel },
+                            new[] { repetitionLevel }, new byte[] { 0 }, 0, new TPhysical[] { });
                     }
                 }
             };
