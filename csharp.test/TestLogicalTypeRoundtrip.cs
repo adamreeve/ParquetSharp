@@ -346,40 +346,6 @@ namespace ParquetSharp.Test
         }
 
         [Test]
-        public static void TestNestedStructArrayOriginal()
-        {
-            var directory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-            Assert.IsNotNull(directory);
-            var path = Path.Combine(directory!, "Artifacts/nested.parquet");
-
-            using var fileReader = new ParquetFileReader(path);
-
-            var rowGroupReader = fileReader.RowGroup(0);
-
-            var idsColumn = rowGroupReader.Column(0);
-            var idsColumnAsReader = idsColumn.LogicalReader<Nested<long?[]>?>();
-            var ids = idsColumnAsReader.ReadAll(3);
-
-            Assert.AreEqual(3, ids.Length);
-            Assert.IsTrue(ids[0].HasValue);
-            Assert.AreEqual(ids[0]!.Value.Value, new long?[] { 1, 2, 3 });
-            Assert.IsTrue(ids[1].HasValue);
-            Assert.AreEqual(ids[1]!.Value.Value, new long?[] { 4, 5, 6 });
-            Assert.IsFalse(ids[2].HasValue);
-
-            var msgColumn = rowGroupReader.Column(1);
-            var msgColumnAsReader = msgColumn.LogicalReader<Nested<string>?>();
-            var msg = msgColumnAsReader.ReadAll(3);
-
-            Assert.AreEqual(3, msg.Length);
-            Assert.IsTrue(msg[0].HasValue);
-            Assert.AreEqual(msg[0]!.Value.Value, "hello");
-            Assert.IsTrue(msg[1].HasValue);
-            Assert.IsNull(msg[1]!.Value.Value);
-            Assert.IsFalse(msg[2].HasValue);
-        }
-
-        [Test]
         public static void TestNestedStructArrayMultipleFields()
         {
             var schemaNode = new GroupNode(
