@@ -55,7 +55,19 @@ namespace ParquetSharp
                         repetitionLevel, nullDefinitionLevel, firstLeafRepLevel);
                 }
 
-                throw new Exception("elementType is nested but schema does not match expected layout");
+                throw new Exception("elementType is nested (optional) but schema does not match expected layout");
+            }
+
+            if (IsNested(elementType, out var innerNestedRequired))
+            {
+                if (schemaNodes.Length >= 1 &&
+                    schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Required })
+                {
+                    return MakeGenericWriter(nameof(MakeNestedWriter), innerNestedRequired, schemaNodes.Skip(1).ToArray(),
+                        repetitionLevel, nullDefinitionLevel, firstLeafRepLevel);
+                }
+
+                throw new Exception("elementType is nested (required) but schema does not match expected layout");
             }
 
             if (elementType.IsArray && elementType != typeof(byte[]))
@@ -261,6 +273,29 @@ namespace ParquetSharp
                         columnWriter.WriteBatchSpaced(1, new[] { nullDefinitionLevel },
                             new[] { repetitionLevel }, new byte[] { 0 }, 0, new TPhysical[] { });
                     }
+                }
+            };
+        }
+
+        // Writes a Nested<TInner>[] array
+        // TODO: This is essentially a no-op and could be handled at the converter level?
+        private Action<Array> MakeNestedWriter<TInner>(Node[] schemaNodes,
+            short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
+        {
+            var columnWriter = (ColumnWriter<TPhysical>)Source;
+
+            var writer0 = MakeWriter(schemaNodes, typeof(TInner), repetitionLevel,
+                nullDefinitionLevel, firstLeafRepLevel, true);
+            var writer = MakeWriter(schemaNodes, typeof(TInner), repetitionLevel,
+                nullDefinitionLevel, repetitionLevel, true);
+
+            return array =>
+            {
+                var items = (Nested<TInner>[])array;
+
+                for (var i = 0; i < items.Length; i++)
+                {
+                    (i > 0 ? writer : writer0)(new[] { items[i].Value });
                 }
             };
         }

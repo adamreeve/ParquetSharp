@@ -36,10 +36,8 @@ namespace ParquetSharp
 
         private Func<int, Array> MakeReader(Node[] schemaNodes, Type elementType, int repetitionLevel, int nullDefinitionLevel, bool wantSingleItem)
         {
-            if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable, out _))
+            if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable, out var innerNested))
             {
-                var innerNested = innerNullable.GetGenericArguments().Single();
-
                 if (schemaNodes.Length >= 1 &&
                     schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Optional })
                 {
@@ -47,7 +45,19 @@ namespace ParquetSharp
                         repetitionLevel, nullDefinitionLevel);
                 }
 
-                throw new Exception("elementType is nested but schema does not match expected layout");
+                throw new Exception("elementType is nested (optional) but schema does not match expected layout");
+            }
+
+            if (IsNested(elementType, out var innerNestedRequired))
+            {
+                if (schemaNodes.Length >= 1 &&
+                    schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Required })
+                {
+                    return MakeGenericReader(nameof(MakeNestedReader), innerNestedRequired, schemaNodes.Skip(1).ToArray(),
+                        repetitionLevel, nullDefinitionLevel);
+                }
+
+                throw new Exception("elementType is nested (required) but schema does not match expected layout");
             }
 
             if (elementType.IsArray && elementType != typeof(byte[]))
@@ -119,6 +129,32 @@ namespace ParquetSharp
                     {
                         _bufferedReader.NextDefinition();
                     }
+
+                    acc.Add(newItem);
+
+                    if (_bufferedReader.IsEofDefinition || (RepLevels != null && _bufferedReader.GetCurrentDefinition().RepLevel < repetitionLevel))
+                    {
+                        break;
+                    }
+                }
+
+                return acc.ToArray();
+            };
+        }
+
+        // Reads a Nested<TInner> array
+        // TODO: This is essentially a no-op and could be handled by the converter?
+        private Func<int, Array> MakeNestedReader<TInner>(Node[] schemaNodes, int repetitionLevel, int nullDefinitionLevel)
+        {
+            var innerReader = MakeReader(schemaNodes, typeof(TInner), repetitionLevel, nullDefinitionLevel, true);
+
+            return numArrayEntriesToRead =>
+            {
+                var acc = new List<Nested<TInner>>();
+
+                while (numArrayEntriesToRead == -1 || acc.Count < numArrayEntriesToRead)
+                {
+                    var newItem = new Nested<TInner>(((TInner[])innerReader(1))[0]);
 
                     acc.Add(newItem);
 

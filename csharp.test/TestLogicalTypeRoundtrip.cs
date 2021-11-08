@@ -248,7 +248,7 @@ namespace ParquetSharp.Test
         }
 
         [Test]
-        public static void TestNestedStructArray([Values(Repetition.Required, Repetition.Optional)] Repetition structRepetition)
+        public static void TestNestedOptionalStructArray()
         {
             // Create a 2d int array
             const int arraySize = 100;
@@ -266,7 +266,7 @@ namespace ParquetSharp.Test
                 var element = new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32);
                 var list = new GroupNode("list", Repetition.Repeated, new[] { element });
                 var ids = new GroupNode("ids", Repetition.Optional, new[] { list }, LogicalType.List());
-                var outer = new GroupNode("struct", structRepetition, new[] { ids });
+                var outer = new GroupNode("struct", Repetition.Optional, new[] { ids });
                 var schemaNode = new GroupNode("schema", Repetition.Required, new[] { outer });
 
                 using var builder = new WriterPropertiesBuilder();
@@ -281,9 +281,66 @@ namespace ParquetSharp.Test
             using var input = new BufferReader(buffer);
             using var fileReader = new ParquetFileReader(input);
             using var rowGroupReader = fileReader.RowGroup(0);
-            using var colReader = rowGroupReader.Column(0).LogicalReader<int[]>();
+            using var colReader = rowGroupReader.Column(0).LogicalReader<Nested<int[]>?>();
 
-            Assert.AreEqual(values, colReader.ReadAll((int)rowGroupReader.MetaData.NumRows));
+            var actual = colReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+            Assert.IsNotEmpty(actual);
+            Assert.AreEqual(values.Length, actual.Length);
+            for (int i=0; i<values.Length; i++)
+            {
+                Assert.AreEqual(values[i].HasValue, actual[i].HasValue);
+                if (values[i].HasValue)
+                {
+                    Assert.AreEqual(values[i]!.Value.Value, actual[i]!.Value.Value);
+                }
+            }
+
+            fileReader.Close();
+        }
+
+        [Test]
+        public static void TestNestedRequiredStructArray()
+        {
+            // Create a 2d int array
+            const int arraySize = 100;
+            var values = new Nested<int[]>[arraySize];
+
+            for (var i = 0; i < arraySize; i++)
+            {
+                values[i] = new Nested<int[]>(Enumerable.Range(0, i % 10).ToArray());
+            }
+
+            using var buffer = new ResizableBuffer();
+
+            using (var output = new BufferOutputStream(buffer))
+            {
+                var element = new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32);
+                var list = new GroupNode("list", Repetition.Repeated, new[] { element });
+                var ids = new GroupNode("ids", Repetition.Optional, new[] { list }, LogicalType.List());
+                var outer = new GroupNode("struct", Repetition.Required, new[] { ids });
+                var schemaNode = new GroupNode("schema", Repetition.Required, new[] { outer });
+
+                using var builder = new WriterPropertiesBuilder();
+                using var fileWriter = new ParquetFileWriter(output, schemaNode, builder.Build());
+                using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
+
+                using var colWriter = rowGroupWriter.Column(0).LogicalWriter<Nested<int[]>>();
+                colWriter.WriteBatch(values);
+                fileWriter.Close();
+            }
+
+            using var input = new BufferReader(buffer);
+            using var fileReader = new ParquetFileReader(input);
+            using var rowGroupReader = fileReader.RowGroup(0);
+            using var colReader = rowGroupReader.Column(0).LogicalReader<Nested<int[]>>();
+
+            var actual = colReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+            Assert.IsNotEmpty(actual);
+            Assert.AreEqual(values.Length, actual.Length);
+            for (int i = 0; i < values.Length; i++)
+            {
+                Assert.AreEqual(values[i].Value, actual[i].Value);
+            }
 
             fileReader.Close();
         }
