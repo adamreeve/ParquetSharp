@@ -54,14 +54,14 @@ namespace ParquetSharp
             }
 
             // Normal path for logical types that need to be converted from the physical types.
-            var nullLevel = DefLevels == null ? (short)-1 : (short)0;
+            var definedLevel = DefLevels == null ? (short)0 : (short)1;
             var buffer = (TPhysical[])Buffer;
 
             while (rowsRead < destination.Length && HasNext)
             {
                 var toRead = Math.Min(destination.Length - rowsRead, Buffer.Length);
                 var read = checked((int)columnReader.ReadBatch(toRead, DefLevels, RepLevels, buffer, out var valuesRead));
-                converter(buffer.AsSpan(0, checked((int)valuesRead)), DefLevels, destination.Slice(rowsRead, read), nullLevel);
+                converter(buffer.AsSpan(0, checked((int)valuesRead)), DefLevels, destination.Slice(rowsRead, read), definedLevel);
                 rowsRead += read;
             }
 

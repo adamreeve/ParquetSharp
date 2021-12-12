@@ -33,28 +33,67 @@ namespace ParquetSharp.Test
             Assert.AreEqual(column1Expected, column1Actual);
 
             // nullable_struct.nullable_struct_string
-            var column2Reader = rowGroupReader.Column(2).LogicalReader<string?>();
+            var column2Reader = rowGroupReader.Column(2).LogicalReader<Nested<string>?>();
             var column2Actual = column2Reader.ReadAll(2);
-            var column2Expected = new[] {"Nullable Struct String", null};
+            var column2Expected = new Nested<string>?[] {new Nested<string>("Nullable Struct String"), null};
             Assert.AreEqual(column2Expected, column2Actual);
 
             // struct.struct_string
-            var column3Reader = rowGroupReader.Column(3).LogicalReader<string>();
+            var column3Reader = rowGroupReader.Column(3).LogicalReader<Nested<string>?>();
             var column3Actual = column3Reader.ReadAll(2);
-            var column3Expected = new[] {"First Struct String", "Second Struct String"};
+            var column3Expected = new Nested<string>?[] {new Nested<string>("First Struct String"), new Nested<string>("Second Struct String")};
             Assert.AreEqual(column3Expected, column3Actual);
 
             // struct_array.array_in_struct_array
-            var column4Reader = rowGroupReader.Column(4).LogicalReader<long?[]?[]>();
+            var column4Reader = rowGroupReader.Column(4).LogicalReader<Nested<long?[]>?[]>();
             var column4Actual = column4Reader.ReadAll(2);
-            var column4Expected = new[] {new[] {new[] {111, 112, 113}, new[] {121, 122, 123}}, new[] {new[] {211, 212, 213}}};
-            Assert.AreEqual(column4Expected, column4Actual);
+            var column4Expected = new Nested<long?[]>?[][] {
+                new Nested<long?[]>?[] {
+                    new Nested<long?[]>(new long?[] {111, 112, 113}),
+                    new Nested<long?[]>(new long?[] {121, 122, 123})
+                },
+                new Nested<long?[]>?[] {
+                    new Nested<long?[]>(new long?[] {211, 212, 213})
+                }
+            };
+            AssertEqual(column4Expected, column4Actual);
 
             // struct_array.string_in_struct_array
-            var column5Reader = rowGroupReader.Column(5).LogicalReader<string[]>();
+            var column5Reader = rowGroupReader.Column(5).LogicalReader<Nested<string>?[]>();
             var column5Actual = column5Reader.ReadAll(2);
-            var column5Expected = new[] {new[] {"First String", "Second String"}, new[] {"Third String"}};
+            var column5Expected = new Nested<string>?[][] {
+                new Nested<string>?[] { new Nested<string>("First String"), new Nested<string>("Second String") },
+                new Nested<string>?[] { new Nested<string>("Third String") }
+            };
             Assert.AreEqual(column5Expected, column5Actual);
+        }
+
+        void AssertEqual<T>(T[]? expected, T[]? actual)
+        {
+            Assert.AreEqual(expected == null, actual == null);
+            if (actual != null && expected != null)
+            {
+                Assert.AreEqual(expected.Length, actual.Length);
+                for (var i=0; i<expected.Length; i++)
+                {
+                    AssertEqual(expected[i] as dynamic, actual[i] as dynamic);
+                }
+            }
+        }
+
+        void AssertEqual<T>(Nested<T> expected, Nested<T> actual)
+        {
+            AssertEqual(expected.Value as dynamic, actual.Value as dynamic);
+        }
+
+        void AssertEqual(long expected, long actual)
+        {
+            Assert.AreEqual(expected, actual);
+        }
+
+        void AssertEqual(object? expected, object? actual)
+        {
+            Assert.AreEqual(expected, actual);
         }
     }
 }

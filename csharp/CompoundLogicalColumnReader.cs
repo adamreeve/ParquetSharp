@@ -210,6 +210,8 @@ namespace ParquetSharp
 
         private Func<Array> MakeLeafReader(bool optional, short repetitionLevel, short nullDefinitionLevel)
         {
+            var definedLevel = (short)(nullDefinitionLevel + 1);
+
             return () =>
             {
                 var defnLevel = new List<short>();
@@ -242,13 +244,15 @@ namespace ParquetSharp
                 }
 
                 var dest = new TLogical[defnLevel.Count];
-                _converter(values.ToArray(), defnLevel.ToArray(), dest, nullDefinitionLevel);
+                _converter(values.ToArray(), defnLevel.ToArray(), dest, definedLevel);
                 return dest;
             };
         }
 
         private Func<Array> MakeLeafReaderSingle(bool optional, short repetitionLevel, short nullDefinitionLevel)
         {
+            var definedLevel = (short)(nullDefinitionLevel + 1);
+
             return () =>
             {
                 var defnLevel = new List<short>();
@@ -271,7 +275,7 @@ namespace ParquetSharp
                 _bufferedReader.NextDefinition();
 
                 var dest = new TLogical[defnLevel.Count];
-                _converter(values.ToArray(), defnLevel.ToArray(), dest, nullDefinitionLevel);
+                _converter(values.ToArray(), defnLevel.ToArray(), dest, definedLevel);
                 return dest;
             };
         }
