@@ -255,7 +255,7 @@ namespace ParquetSharp.Test
 
             for (var i = 0; i < arraySize; i++)
             {
-                values[i] = (i % 3 == 0) ? null : new Nested<int[]>(Enumerable.Range(0, arraySize).ToArray());
+                values[i] = (i % 3 == 0) ? (Nested<int[]>?)null : new Nested<int[]>(Enumerable.Range(0, arraySize).ToArray());
             }
 
             using var buffer = new ResizableBuffer();
