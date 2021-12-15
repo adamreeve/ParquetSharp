@@ -79,9 +79,7 @@ namespace ParquetSharp
                     // - "The outer-most level must be a group annotated with LIST that contains a single field named list.
                     //   The repetition of this level must be either optional or required and determines whether the list is nullable."
                     //   Arrays are automatically nullable, so skip over it.
-                    if (node.Parent == null
-                        || node.Parent.LogicalType.Type != LogicalTypeEnum.List
-                        || node.Parent.Repetition is not (Repetition.Optional or Repetition.Required))
+                    if (node.Parent == null || node.Parent.LogicalType.Type != LogicalTypeEnum.List || node.Parent.Repetition is not (Repetition.Optional or Repetition.Required))
                     {
                         throw new Exception("Schema not according to Parquet spec");
                     }
@@ -97,8 +95,7 @@ namespace ParquetSharp
                     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                     // TODO: Skip if elementType is a reference type?
                     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    elementType = elementType.BaseType != typeof(object) && elementType.BaseType != typeof(Array) ?
-                        typeof(Nullable<>).MakeGenericType(elementType) : elementType;
+                    elementType = elementType.BaseType != typeof(object) && elementType.BaseType != typeof(Array) ? typeof(Nullable<>).MakeGenericType(elementType) : elementType;
                 }
                 else if (node is Schema.GroupNode && node.Parent != null)
                 {

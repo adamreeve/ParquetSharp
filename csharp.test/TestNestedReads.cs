@@ -50,9 +50,9 @@ namespace ParquetSharp.Test
             Assert.AreEqual(2, column4Actual.Length);
             Assert.AreEqual(2, column4Actual[0].Length);
             Assert.IsTrue(column4Actual[0][0].HasValue);
-            Assert.AreEqual(new long?[] { 111, 112, 113 }, column4Actual[0][0]!.Value.Value);
+            Assert.AreEqual(new long?[] {111, 112, 113}, column4Actual[0][0]!.Value.Value);
             Assert.IsTrue(column4Actual[0][1].HasValue);
-            Assert.AreEqual(new long?[] { 121, 122, 123 }, column4Actual[0][1]!.Value.Value);
+            Assert.AreEqual(new long?[] {121, 122, 123}, column4Actual[0][1]!.Value.Value);
             Assert.AreEqual(1, column4Actual[1].Length);
             Assert.IsTrue(column4Actual[1][0]!.HasValue);
             Assert.AreEqual(new long?[] {211, 212, 213}, column4Actual[1][0]!.Value.Value);
@@ -61,8 +61,8 @@ namespace ParquetSharp.Test
             var column5Reader = rowGroupReader.Column(5).LogicalReader<Nested<string>?[]>();
             var column5Actual = column5Reader.ReadAll(2);
             Assert.AreEqual(2, column5Actual.Length);
-            Assert.AreEqual(new Nested<string>?[] { new Nested<string>("First String"), new Nested<string>("Second String") }, column5Actual[0]);
-            Assert.AreEqual(new Nested<string>?[] { new Nested<string>("Third String") }, column5Actual[1]);
+            Assert.AreEqual(new Nested<string>?[] {new Nested<string>("First String"), new Nested<string>("Second String")}, column5Actual[0]);
+            Assert.AreEqual(new Nested<string>?[] {new Nested<string>("Third String")}, column5Actual[1]);
         }
     }
 }

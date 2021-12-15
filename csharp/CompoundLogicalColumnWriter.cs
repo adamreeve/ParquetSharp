@@ -49,7 +49,7 @@ namespace ParquetSharp
             if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable, out var innerNested))
             {
                 if (schemaNodes.Length >= 1 &&
-                    schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Optional })
+                    schemaNodes[0] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Optional})
                 {
                     return MakeGenericWriter(nameof(MakeOptionalNestedWriter), innerNested, schemaNodes.Skip(1).ToArray(),
                         repetitionLevel, nullDefinitionLevel, firstLeafRepLevel);
@@ -61,7 +61,7 @@ namespace ParquetSharp
             if (IsNested(elementType, out var innerNestedRequired))
             {
                 if (schemaNodes.Length >= 1 &&
-                    schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Required })
+                    schemaNodes[0] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Required})
                 {
                     return MakeGenericWriter(nameof(MakeNestedWriter), innerNestedRequired, schemaNodes.Skip(1).ToArray(),
                         repetitionLevel, nullDefinitionLevel, firstLeafRepLevel);
@@ -73,8 +73,8 @@ namespace ParquetSharp
             if (elementType.IsArray && elementType != typeof(byte[]))
             {
                 if (schemaNodes.Length >= 2 &&
-                    schemaNodes[0] is GroupNode { LogicalType: ListLogicalType, Repetition: Repetition.Optional } &&
-                    schemaNodes[1] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Repeated })
+                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType, Repetition: Repetition.Optional} &&
+                    schemaNodes[1] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Repeated})
                 {
                     var containedType = elementType.GetElementType();
 
@@ -94,8 +94,8 @@ namespace ParquetSharp
             {
                 bool isOptional = schemaNodes[0].Repetition == Repetition.Optional;
 
-                short leafDefinitionLevel = isOptional ? (short)(nullDefinitionLevel + 1) : nullDefinitionLevel;
-                short leafNullDefinitionLevel = isOptional ? nullDefinitionLevel : (short)-1;
+                short leafDefinitionLevel = isOptional ? (short) (nullDefinitionLevel + 1) : nullDefinitionLevel;
+                short leafNullDefinitionLevel = isOptional ? nullDefinitionLevel : (short) -1;
 
                 if (singleItem)
                 {
@@ -112,10 +112,10 @@ namespace ParquetSharp
 
         private Action<Array> MakeArrayWriter(Node[] schemaNodes, Type elementType, short nullDefinitionLevel, short repetitionLevel, short firstLeafRepLevel)
         {
-            var columnWriter = (ColumnWriter<TPhysical>)Source;
+            var columnWriter = (ColumnWriter<TPhysical>) Source;
 
-            var writer0 = MakeWriter(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), firstLeafRepLevel, false);
-            var writer = MakeWriter(schemaNodes, elementType, (short)(repetitionLevel + 1), (short)(nullDefinitionLevel + 2), repetitionLevel, false);
+            var writer0 = MakeWriter(schemaNodes, elementType, (short) (repetitionLevel + 1), (short) (nullDefinitionLevel + 2), firstLeafRepLevel, false);
+            var writer = MakeWriter(schemaNodes, elementType, (short) (repetitionLevel + 1), (short) (nullDefinitionLevel + 2), repetitionLevel, false);
 
             return values =>
             {
@@ -139,13 +139,13 @@ namespace ParquetSharp
                         else
                         {
                             // Write that we have a zero length array
-                            columnWriter.WriteBatchSpaced(1, new[] { (short)(nullDefinitionLevel + 1) }, new[] { currentLeafRepLevel }, new byte[] { 0 }, 0, new TPhysical[] { });
+                            columnWriter.WriteBatchSpaced(1, new[] {(short) (nullDefinitionLevel + 1)}, new[] {currentLeafRepLevel}, new byte[] {0}, 0, new TPhysical[] { });
                         }
                     }
                     else
                     {
                         // Write that this item is null
-                        columnWriter.WriteBatchSpaced(1, new[] { nullDefinitionLevel }, new[] { currentLeafRepLevel }, new byte[] { 0 }, 0, new TPhysical[] { });
+                        columnWriter.WriteBatchSpaced(1, new[] {nullDefinitionLevel}, new[] {currentLeafRepLevel}, new byte[] {0}, 0, new TPhysical[] { });
                     }
                 }
             };
@@ -167,12 +167,12 @@ namespace ParquetSharp
                 throw new InvalidOperationException("RepLevels should not be null.");
             }
 
-            var columnWriter = (ColumnWriter<TPhysical>)Source;
-            var buffer = (TPhysical[])Buffer;
+            var columnWriter = (ColumnWriter<TPhysical>) Source;
+            var buffer = (TPhysical[]) Buffer;
 
             return values =>
             {
-                ReadOnlySpan<TLogical> valuesSpan = (TLogical[])values;
+                ReadOnlySpan<TLogical> valuesSpan = (TLogical[]) values;
 
                 var rowsWritten = 0;
                 var firstItem = true;
@@ -217,12 +217,12 @@ namespace ParquetSharp
                 throw new InvalidOperationException("DefLevels should not be null.");
             }
 
-            var columnWriter = (ColumnWriter<TPhysical>)Source;
-            var buffer = (TPhysical[])Buffer;
+            var columnWriter = (ColumnWriter<TPhysical>) Source;
+            var buffer = (TPhysical[]) Buffer;
 
             return values =>
             {
-                ReadOnlySpan<TLogical> valuesSpan = (TLogical[])values;
+                ReadOnlySpan<TLogical> valuesSpan = (TLogical[]) values;
 
                 if (valuesSpan.Length != 1)
                 {
@@ -244,19 +244,19 @@ namespace ParquetSharp
         }
 
         // Writes a Nested<TInner>?[] array
-        private Action<Array> MakeOptionalNestedWriter<TInner>(Node[] schemaNodes, 
+        private Action<Array> MakeOptionalNestedWriter<TInner>(Node[] schemaNodes,
             short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
         {
-            var columnWriter = (ColumnWriter<TPhysical>)Source;
+            var columnWriter = (ColumnWriter<TPhysical>) Source;
 
             var writer0 = MakeWriter(schemaNodes, typeof(TInner), repetitionLevel,
-                (short)(nullDefinitionLevel + 1), firstLeafRepLevel, true);
+                (short) (nullDefinitionLevel + 1), firstLeafRepLevel, true);
             var writer = MakeWriter(schemaNodes, typeof(TInner), repetitionLevel,
-                (short)(nullDefinitionLevel + 1), repetitionLevel, true);
+                (short) (nullDefinitionLevel + 1), repetitionLevel, true);
 
             return array =>
             {
-                var items = (Nested<TInner>?[])array;
+                var items = (Nested<TInner>?[]) array;
 
                 for (var i = 0; i < items.Length; i++)
                 {
@@ -265,13 +265,13 @@ namespace ParquetSharp
                     if (item.HasValue)
                     {
                         // We have a positive length array, call the top level array writer on its values
-                        (i > 0 ? writer : writer0)(new[] { item.Value.Value });
+                        (i > 0 ? writer : writer0)(new[] {item.Value.Value});
                     }
                     else
                     {
                         // Write that this item is null
-                        columnWriter.WriteBatchSpaced(1, new[] { nullDefinitionLevel },
-                            new[] { repetitionLevel }, new byte[] { 0 }, 0, new TPhysical[] { });
+                        columnWriter.WriteBatchSpaced(1, new[] {nullDefinitionLevel},
+                            new[] {repetitionLevel}, new byte[] {0}, 0, new TPhysical[] { });
                     }
                 }
             };
@@ -282,7 +282,7 @@ namespace ParquetSharp
         private Action<Array> MakeNestedWriter<TInner>(Node[] schemaNodes,
             short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
         {
-            var columnWriter = (ColumnWriter<TPhysical>)Source;
+            var columnWriter = (ColumnWriter<TPhysical>) Source;
 
             var writer0 = MakeWriter(schemaNodes, typeof(TInner), repetitionLevel,
                 nullDefinitionLevel, firstLeafRepLevel, true);
@@ -291,22 +291,24 @@ namespace ParquetSharp
 
             return array =>
             {
-                var items = (Nested<TInner>[])array;
+                var items = (Nested<TInner>[]) array;
 
                 for (var i = 0; i < items.Length; i++)
                 {
-                    (i > 0 ? writer : writer0)(new[] { items[i].Value });
+                    (i > 0 ? writer : writer0)(new[] {items[i].Value});
                 }
             };
         }
 
-        private Action<Array> MakeGenericWriter(string name, Type type, Node[] schemaNodes, 
+        private Action<Array> MakeGenericWriter(string name, Type type, Node[] schemaNodes,
             short repetitionLevel, short nullDefinitionLevel, short firstLeafRepLevel)
         {
             var iface = typeof(CompoundLogicalColumnWriter<TPhysical, TLogical, TElement>);
-            var genericMethod = iface.GetMethod(name, System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
-            return (Action<Array>)genericMethod.MakeGenericMethod(type).Invoke(this, new object[] { 
-                schemaNodes, repetitionLevel, nullDefinitionLevel, firstLeafRepLevel });
+            var genericMethod = iface.GetMethod(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            return (Action<Array>) genericMethod.MakeGenericMethod(type).Invoke(this, new object[]
+            {
+                schemaNodes, repetitionLevel, nullDefinitionLevel, firstLeafRepLevel
+            });
         }
 
         private readonly ByteBuffer? _byteBuffer;

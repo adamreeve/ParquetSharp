@@ -37,9 +37,9 @@ namespace ParquetSharp
             if (typeof(TTLogical) != typeof(TLogical)) throw new ArgumentException("generic logical type should never be different");
 
             var rowsWritten = 0;
-            var nullLevel = DefLevels == null ? (short)-1 : (short)0;
-            var columnWriter = (ColumnWriter<TPhysical>)Source;
-            var buffer = (TPhysical[])Buffer;
+            var nullLevel = DefLevels == null ? (short) -1 : (short) 0;
+            var columnWriter = (ColumnWriter<TPhysical>) Source;
+            var buffer = (TPhysical[]) Buffer;
 
             var converter = _converter as LogicalWrite<TTLogical, TPhysical>.Converter;
             if (converter == null)

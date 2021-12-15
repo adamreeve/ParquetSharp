@@ -255,7 +255,7 @@ namespace ParquetSharp.Test
 
             for (var i = 0; i < arraySize; i++)
             {
-                values[i] = (i % 3 == 0) ? (Nested<int[]>?)null : new Nested<int[]>(Enumerable.Range(0, arraySize).ToArray());
+                values[i] = (i % 3 == 0) ? (Nested<int[]>?) null : new Nested<int[]>(Enumerable.Range(0, arraySize).ToArray());
             }
 
             using var buffer = new ResizableBuffer();
@@ -263,10 +263,10 @@ namespace ParquetSharp.Test
             using (var output = new BufferOutputStream(buffer))
             {
                 var element = new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32);
-                var list = new GroupNode("list", Repetition.Repeated, new[] { element });
-                var ids = new GroupNode("ids", Repetition.Optional, new[] { list }, LogicalType.List());
-                var outer = new GroupNode("struct", Repetition.Optional, new[] { ids });
-                var schemaNode = new GroupNode("schema", Repetition.Required, new[] { outer });
+                var list = new GroupNode("list", Repetition.Repeated, new[] {element});
+                var ids = new GroupNode("ids", Repetition.Optional, new[] {list}, LogicalType.List());
+                var outer = new GroupNode("struct", Repetition.Optional, new[] {ids});
+                var schemaNode = new GroupNode("schema", Repetition.Required, new[] {outer});
 
                 using var builder = new WriterPropertiesBuilder();
                 using var fileWriter = new ParquetFileWriter(output, schemaNode, builder.Build());
@@ -282,10 +282,10 @@ namespace ParquetSharp.Test
             using var rowGroupReader = fileReader.RowGroup(0);
             using var colReader = rowGroupReader.Column(0).LogicalReader<Nested<int[]>?>();
 
-            var actual = colReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+            var actual = colReader.ReadAll((int) rowGroupReader.MetaData.NumRows);
             Assert.IsNotEmpty(actual);
             Assert.AreEqual(values.Length, actual.Length);
-            for (int i=0; i<values.Length; i++)
+            for (int i = 0; i < values.Length; i++)
             {
                 Assert.AreEqual(values[i].HasValue, actual[i].HasValue);
                 if (values[i].HasValue)
@@ -314,10 +314,10 @@ namespace ParquetSharp.Test
             using (var output = new BufferOutputStream(buffer))
             {
                 var element = new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32);
-                var list = new GroupNode("list", Repetition.Repeated, new[] { element });
-                var ids = new GroupNode("ids", Repetition.Optional, new[] { list }, LogicalType.List());
-                var outer = new GroupNode("struct", Repetition.Required, new[] { ids });
-                var schemaNode = new GroupNode("schema", Repetition.Required, new[] { outer });
+                var list = new GroupNode("list", Repetition.Repeated, new[] {element});
+                var ids = new GroupNode("ids", Repetition.Optional, new[] {list}, LogicalType.List());
+                var outer = new GroupNode("struct", Repetition.Required, new[] {ids});
+                var schemaNode = new GroupNode("schema", Repetition.Required, new[] {outer});
 
                 using var builder = new WriterPropertiesBuilder();
                 using var fileWriter = new ParquetFileWriter(output, schemaNode, builder.Build());
@@ -333,7 +333,7 @@ namespace ParquetSharp.Test
             using var rowGroupReader = fileReader.RowGroup(0);
             using var colReader = rowGroupReader.Column(0).LogicalReader<Nested<int[]>>();
 
-            var actual = colReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+            var actual = colReader.ReadAll((int) rowGroupReader.MetaData.NumRows);
             Assert.IsNotEmpty(actual);
             Assert.AreEqual(values.Length, actual.Length);
             for (int i = 0; i < values.Length; i++)
@@ -350,19 +350,23 @@ namespace ParquetSharp.Test
             var schemaNode = new GroupNode(
                 "schema",
                 Repetition.Required,
-                new Node[] {
+                new Node[]
+                {
                     new GroupNode(
                         "nested",
                         Repetition.Optional,
-                        new Node[] {
+                        new Node[]
+                        {
                             new GroupNode(
                                 "ids",
                                 Repetition.Optional,
-                                new Node[] {
+                                new Node[]
+                                {
                                     new GroupNode(
                                         "list",
                                         Repetition.Repeated,
-                                        new Node[] {
+                                        new Node[]
+                                        {
                                             new PrimitiveNode("item", Repetition.Optional, LogicalType.None(), PhysicalType.Int64)
                                         }
                                     )
@@ -375,10 +379,10 @@ namespace ParquetSharp.Test
                 }
             );
 
-            var ids = new Nested<long?[]>? []
+            var ids = new Nested<long?[]>?[]
             {
-                new Nested<long?[]>(new long?[] { 1, 2, 3 }),
-                new Nested<long?[]>(new long?[] { 4, 5, 6 }),
+                new Nested<long?[]>(new long?[] {1, 2, 3}),
+                new Nested<long?[]>(new long?[] {4, 5, 6}),
                 new Nested<long?[]>(null!),
                 null
             };
@@ -418,9 +422,9 @@ namespace ParquetSharp.Test
             Assert.IsNotEmpty(ids2);
             Assert.AreEqual(4, ids2.Length);
             Assert.IsTrue(ids2[0].HasValue);
-            Assert.AreEqual(ids2[0]!.Value.Value, new long?[] { 1, 2, 3 });
+            Assert.AreEqual(ids2[0]!.Value.Value, new long?[] {1, 2, 3});
             Assert.IsTrue(ids2[1].HasValue);
-            Assert.AreEqual(ids2[1]!.Value.Value, new long?[] { 4, 5, 6 });
+            Assert.AreEqual(ids2[1]!.Value.Value, new long?[] {4, 5, 6});
             Assert.IsTrue(ids2[2].HasValue);
             Assert.IsNull(ids2[2]!.Value.Value);
             Assert.IsFalse(ids2[3].HasValue);

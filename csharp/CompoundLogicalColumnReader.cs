@@ -39,7 +39,7 @@ namespace ParquetSharp
             if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable, out var innerNested))
             {
                 if (schemaNodes.Length >= 1 &&
-                    schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Optional })
+                    schemaNodes[0] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Optional})
                 {
                     return MakeGenericReader(nameof(MakeNestedOptionalReader), innerNested, schemaNodes.Skip(1).ToArray(),
                         repetitionLevel, nullDefinitionLevel);
@@ -51,7 +51,7 @@ namespace ParquetSharp
             if (IsNested(elementType, out var innerNestedRequired))
             {
                 if (schemaNodes.Length >= 1 &&
-                    schemaNodes[0] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Required })
+                    schemaNodes[0] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Required})
                 {
                     return MakeGenericReader(nameof(MakeNestedReader), innerNestedRequired, schemaNodes.Skip(1).ToArray(),
                         repetitionLevel, nullDefinitionLevel);
@@ -63,10 +63,10 @@ namespace ParquetSharp
             if (elementType.IsArray && elementType != typeof(byte[]))
             {
                 if (schemaNodes.Length >= 2 &&
-                    schemaNodes[0] is GroupNode { LogicalType: ListLogicalType, Repetition: Repetition.Optional } &&
-                    schemaNodes[1] is GroupNode { LogicalType: NoneLogicalType, Repetition: Repetition.Repeated })
+                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType, Repetition: Repetition.Optional} &&
+                    schemaNodes[1] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Repeated})
                 {
-                    return MakeArrayReader(schemaNodes, elementType, (short)repetitionLevel, (short)nullDefinitionLevel);
+                    return MakeArrayReader(schemaNodes, elementType, (short) repetitionLevel, (short) nullDefinitionLevel);
                 }
 
                 throw new Exception("elementType is an array but schema does not match the expected layout");
@@ -78,7 +78,7 @@ namespace ParquetSharp
 
                 if (wantSingleItem)
                 {
-                    var leafReader = MakeLeafReaderSingle(optional, (short)repetitionLevel, (short)nullDefinitionLevel);
+                    var leafReader = MakeLeafReaderSingle(optional, (short) repetitionLevel, (short) nullDefinitionLevel);
 
                     return numElementsToRead =>
                     {
@@ -91,7 +91,7 @@ namespace ParquetSharp
                 }
                 else
                 {
-                    var leafReader = MakeLeafReader(optional, (short)repetitionLevel, (short)nullDefinitionLevel);
+                    var leafReader = MakeLeafReader(optional, (short) repetitionLevel, (short) nullDefinitionLevel);
 
                     return numElementsToRead =>
                     {
@@ -154,7 +154,7 @@ namespace ParquetSharp
 
                 while (numArrayEntriesToRead == -1 || acc.Count < numArrayEntriesToRead)
                 {
-                    var newItem = new Nested<TInner>(((TInner[])innerReader(1))[0]);
+                    var newItem = new Nested<TInner>(((TInner[]) innerReader(1))[0]);
 
                     acc.Add(newItem);
 
@@ -168,7 +168,7 @@ namespace ParquetSharp
             };
         }
 
-        private Func<int, Array> MakeArrayReader(Node[] schemaNodes, 
+        private Func<int, Array> MakeArrayReader(Node[] schemaNodes,
             Type elementType, short repetitionLevel, short nullDefinitionLevel)
         {
             var innerReader = MakeReader(schemaNodes.Skip(2).ToArray(), elementType.GetElementType(), repetitionLevel + 1, nullDefinitionLevel + 2, false);
@@ -210,7 +210,7 @@ namespace ParquetSharp
 
         private Func<Array> MakeLeafReader(bool optional, short repetitionLevel, short nullDefinitionLevel)
         {
-            var definedLevel = (short)(nullDefinitionLevel + 1);
+            var definedLevel = (short) (nullDefinitionLevel + 1);
 
             return () =>
             {
@@ -251,7 +251,7 @@ namespace ParquetSharp
 
         private Func<Array> MakeLeafReaderSingle(bool optional, short repetitionLevel, short nullDefinitionLevel)
         {
-            var definedLevel = (short)(nullDefinitionLevel + 1);
+            var definedLevel = (short) (nullDefinitionLevel + 1);
 
             return () =>
             {
@@ -306,8 +306,10 @@ namespace ParquetSharp
         {
             var iface = typeof(CompoundLogicalColumnReader<TPhysical, TLogical, TElement>);
             var genericMethod = iface.GetMethod(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            return (Func<int, Array>)genericMethod.MakeGenericMethod(type).Invoke(this, new object[] {
-                schemaNodes, repetitionLevel, nullDefinitionLevel });
+            return (Func<int, Array>) genericMethod.MakeGenericMethod(type).Invoke(this, new object[]
+            {
+                schemaNodes, repetitionLevel, nullDefinitionLevel
+            });
         }
 
         private readonly BufferedReader<TPhysical> _bufferedReader;

@@ -37,7 +37,7 @@ namespace ParquetSharp
             if (directReader != null && DefLevels != null) throw new ArgumentException("direct reader cannot be provided if type is optional");
             if (converter == null) throw new ArgumentNullException(nameof(converter));
 
-            var columnReader = (ColumnReader<TPhysical>)Source;
+            var columnReader = (ColumnReader<TPhysical>) Source;
             var rowsRead = 0;
 
             // Fast path for logical types that directly map to the physical type in memory.
@@ -46,7 +46,7 @@ namespace ParquetSharp
                 while (rowsRead < destination.Length && HasNext)
                 {
                     var toRead = destination.Length - rowsRead;
-                    var read = checked((int)directReader(columnReader, destination.Slice(rowsRead, toRead)));
+                    var read = checked((int) directReader(columnReader, destination.Slice(rowsRead, toRead)));
                     rowsRead += read;
                 }
 
@@ -54,14 +54,14 @@ namespace ParquetSharp
             }
 
             // Normal path for logical types that need to be converted from the physical types.
-            var definedLevel = DefLevels == null ? (short)0 : (short)1;
-            var buffer = (TPhysical[])Buffer;
+            var definedLevel = DefLevels == null ? (short) 0 : (short) 1;
+            var buffer = (TPhysical[]) Buffer;
 
             while (rowsRead < destination.Length && HasNext)
             {
                 var toRead = Math.Min(destination.Length - rowsRead, Buffer.Length);
-                var read = checked((int)columnReader.ReadBatch(toRead, DefLevels, RepLevels, buffer, out var valuesRead));
-                converter(buffer.AsSpan(0, checked((int)valuesRead)), DefLevels, destination.Slice(rowsRead, read), definedLevel);
+                var read = checked((int) columnReader.ReadBatch(toRead, DefLevels, RepLevels, buffer, out var valuesRead));
+                converter(buffer.AsSpan(0, checked((int) valuesRead)), DefLevels, destination.Slice(rowsRead, read), definedLevel);
                 rowsRead += read;
             }
 
