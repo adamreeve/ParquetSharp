@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using ParquetSharp.IO;
 using ParquetSharp.RowOriented;
 using NUnit.Framework;
@@ -271,6 +272,39 @@ namespace ParquetSharp.Test
 
             [MapToColumn("D"), ParquetDecimalScale(3)]
             public decimal T;
+        }
+
+        [Test]
+        public static void TestNestedObjectRead()
+        {
+            var directory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            var path = Path.Combine(directory!, "TestFiles/nested2.parquet");
+            using var reader = ParquetFile.CreateRowReader<RowWithNesting>(path);
+
+            var rows = reader.ReadRows(0);
+
+            Assert.Equals(rows[0].Nested.Q, 1);
+            Assert.Equals(rows[0].Nested.R!, 2);
+            Assert.Equals(rows[0].S, 7);
+
+        }
+
+        private struct NestedGroup
+        {
+            [MapToColumn("A")]
+            public int Q { get; set; }
+
+            [MapToColumn("B")]
+            public int? R { get; set; }
+        }
+
+        private struct RowWithNesting
+        {
+            [MapToColumn("N")]
+            public NestedGroup Nested { get; set; }
+
+            [MapToColumn("C")]
+            public int S { get; set; }
         }
 
 #if DUMP_EXPRESSION_TREES
