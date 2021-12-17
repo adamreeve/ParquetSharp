@@ -413,12 +413,12 @@ namespace ParquetSharp.Test
 
             // Read it back.
             using var inStream = new BufferReader(buffer);
-            using var fileReader2 = new ParquetFileReader(inStream);
-            using var rowGroup = fileReader2.RowGroup(0);
+            using var fileReader = new ParquetFileReader(inStream);
+            using var rowGroup = fileReader.RowGroup(0);
 
-            var idsColumn2 = rowGroup.Column(0);
-            var idsColumnReader2 = idsColumn2.LogicalReader<Nested<long?[]>?>();
-            var ids2 = idsColumnReader2.ReadAll(4);
+            var idsColumn = rowGroup.Column(0);
+            var idsColumnReader = idsColumn.LogicalReader<Nested<long?[]>?>();
+            var ids2 = idsColumnReader.ReadAll(4);
             Assert.IsNotEmpty(ids2);
             Assert.AreEqual(4, ids2.Length);
             Assert.IsTrue(ids2[0].HasValue);
@@ -429,9 +429,9 @@ namespace ParquetSharp.Test
             Assert.IsNull(ids2[2]!.Value.Value);
             Assert.IsFalse(ids2[3].HasValue);
 
-            var msgColumn2 = rowGroup.Column(1);
-            var msgColumnReader2 = msgColumn2.LogicalReader<Nested<string?>?>();
-            var msg2 = msgColumnReader2.ReadAll(4);
+            var msgColumn = rowGroup.Column(1);
+            var msgColumnReader = msgColumn.LogicalReader<Nested<string?>?>();
+            var msg2 = msgColumnReader.ReadAll(4);
             Assert.IsNotEmpty(msg2);
             Assert.AreEqual(4, msg2.Length);
             Assert.IsTrue(msg2[0].HasValue);

@@ -255,7 +255,6 @@ namespace ParquetSharp
 
             return () =>
             {
-                var defnLevel = new List<short>();
                 var values = new List<TPhysical>();
 
                 var defn = _bufferedReader.GetCurrentDefinition();
@@ -270,12 +269,12 @@ namespace ParquetSharp
                     values.Add(_bufferedReader.ReadValue());
                 }
 
-                defnLevel.Add(defn.DefLevel);
+                var defnLevel = new[] {defn.DefLevel};
 
                 _bufferedReader.NextDefinition();
 
-                var dest = new TLogical[defnLevel.Count];
-                _converter(values.ToArray(), defnLevel.ToArray(), dest, definedLevel);
+                var dest = new TLogical[defnLevel.Length];
+                _converter(values.ToArray(), defnLevel, dest, definedLevel);
                 return dest;
             };
         }
