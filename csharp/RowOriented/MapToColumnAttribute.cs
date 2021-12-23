@@ -15,4 +15,18 @@ namespace ParquetSharp.RowOriented
 
         public readonly string ColumnName;
     }
+
+    /// <summary>
+    /// Explicitly map the given field to a specific schema group.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+    public sealed class MapToGroupAttribute : Attribute
+    {
+        public MapToGroupAttribute(string groupName)
+        {
+            GroupName = groupName;
+        }
+
+        public readonly string GroupName;
+    }
 }

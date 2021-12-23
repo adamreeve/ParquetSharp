@@ -300,7 +300,7 @@ namespace ParquetSharp.Test
 
         private struct RowWithNesting
         {
-            [MapToColumn("N")]
+            [MapToGroup("N")]
             public NestedGroup Nested { get; set; }
 
             [MapToColumn("C")]
