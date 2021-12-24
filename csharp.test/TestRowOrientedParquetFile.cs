@@ -283,9 +283,9 @@ namespace ParquetSharp.Test
 
             var rows = reader.ReadRows(0);
 
-            Assert.Equals(rows[0].Nested.Q, 1);
-            Assert.Equals(rows[0].Nested.R!, 2);
-            Assert.Equals(rows[0].S, 7);
+            Assert.AreEqual(rows[0].Nested.Q, 1);
+            Assert.AreEqual(rows[0].Nested.R!, 2);
+            Assert.AreEqual(rows[0].S, 7);
 
         }
 
@@ -319,7 +319,7 @@ namespace ParquetSharp.Test
         {
             if (expression == null)
             {
-                return null;
+                return "";
             }
 
             var propertyInfo = typeof(Expression).GetProperty("DebugView", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -328,7 +328,7 @@ namespace ParquetSharp.Test
                 throw new Exception("unable to reflect 'DebugView' property");
             }
 
-            return propertyInfo.GetValue(expression) as string;
+            return propertyInfo.GetValue(expression) as string ?? "";
         }
 #endif
     }

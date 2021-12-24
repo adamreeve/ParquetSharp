@@ -9,8 +9,6 @@ namespace ParquetSharp
     {
         public BufferedReader(ColumnReader reader, TPhysicalvalue[] values, short[]? defLevels, short[]? repLevels)
         {
-            if (defLevels == null) throw new InvalidOperationException("definition levels not defined");
-
             _columnReader = reader;
             _values = values;
             _defLevels = defLevels;
@@ -40,7 +38,7 @@ namespace ParquetSharp
                 }
             }
 
-            return (DefLevel: _defLevels?[_levelIndex] ?? -1, RepLevel: _repLevels?[_levelIndex] ?? -1);
+            return (DefLevel: _defLevels?[_levelIndex] ?? 0, RepLevel: _repLevels?[_levelIndex] ?? 0);
         }
 
         public bool IsEofDefinition => _levelIndex >= _numLevels && !_columnReader.HasNext;

@@ -3,7 +3,7 @@ using System.Reflection;
 
 namespace ParquetSharp.RowOriented
 {
-    internal readonly struct MappedField
+    internal class MappedField
     {
         public readonly MemberInfo Info;
         public readonly string? MappedSchemaName;
@@ -29,7 +29,7 @@ namespace ParquetSharp.RowOriented
         public Type GetLogicalType(int nestingLevel)
         {
             var type = Type;
-            for (var i = 1; i < nestingLevel; ++i)
+            for (var i = 0; i < nestingLevel; ++i)
             {
                 type = typeof(Nested<>).MakeGenericType(type);
             }

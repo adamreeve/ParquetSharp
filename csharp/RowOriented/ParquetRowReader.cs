@@ -103,27 +103,47 @@ namespace ParquetSharp.RowOriented
 
                 for (var i = 0; i < schemaDescriptor.NumColumns; ++i)
                 {
-                    fileColumns[schemaDescriptor.Column(i).Name] = i;
+                    fileColumns[schemaDescriptor.Column(i).Path.ToDotString()] = i;
                 }
 
-                for (var fieldIndex = 0; fieldIndex < fields.Length; ++fieldIndex)
+                int leafIndex = 0;
+                foreach (var field in fields)
                 {
-                    var mappedColumn = fields[fieldIndex].MappedSchemaName ?? throw new InvalidOperationException("mapped column name is null");
-
-                    if (!fileColumns.TryGetValue(mappedColumn, out _))
-                    {
-                        throw new ArgumentException(
-                            $"{typeof(TTuple)} maps field '{fields[fieldIndex].Name}' to parquet column " +
-                            $"'{fields[fieldIndex].MappedSchemaName}' but the target column does not exist in the input parquet file."
-                        );
-                    }
-
-                    _fileColumnIndex[fieldIndex] = fileColumns[mappedColumn];
+                    var mappedNode = field.MappedSchemaName ?? throw new InvalidOperationException("mapped column name is null");
+                    SetColumnMapping(field, mappedNode, fileColumns, ref leafIndex);
                 }
             }
 
-            public int Get(int columnIndex) => _fileColumnIndex[columnIndex];
+            private void SetColumnMapping(MappedField field, string schemaPath, Dictionary<string, int> fileColumns, ref int leafIndex)
+            {
+                if (field.Children.Length == 0)
+                {
+                    if (fileColumns.TryGetValue(schemaPath, out var fileColumn))
+                    {
+                        _fileColumnIndex[leafIndex] = fileColumn;
+                        leafIndex++;
+                    }
+                    else
+                    {
+                        throw new ArgumentException(
+                            $"{typeof(TTuple)} maps field '{field.Name}' to parquet column " +
+                            $"'{field.MappedSchemaName}' but the target column does not exist in the input parquet file."
+                        );
+                    }
+                }
+                else
+                {
+                    foreach (var child in field.Children)
+                    {
+                        var mappedNode = child.MappedSchemaName ?? throw new InvalidOperationException("mapped column name is null");
+                        SetColumnMapping(child, schemaPath + "." + mappedNode, fileColumns, ref leafIndex);
+                    }
+                }
+            }
 
+            public int Get(int leafColumnIndex) => _fileColumnIndex[leafColumnIndex];
+
+            // Map from leaf column index in mapping to file column index
             readonly Dictionary<int, int> _fileColumnIndex = new Dictionary<int, int>();
         }
 

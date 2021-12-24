@@ -118,6 +118,19 @@ namespace ParquetSharp.RowOriented
             return (columns, (ParquetRowWriter<TTuple>.WriteAction) writeDelegate);
         }
 
+        private static IEnumerable<(string Name, MappedField Field, bool IsLeaf, int Level)> DepthFirstFields(MappedField[] fields, string path="", int level=0)
+        {
+            foreach (var field in fields)
+            {
+                var fieldPath = path + "_" + field.SchemaName;
+                foreach (var leaf in DepthFirstFields(field.Children, fieldPath, level + 1))
+                {
+                    yield return leaf;
+                }
+                yield return (fieldPath, field, field.Children.Length == 0, level);
+            }
+        }
+
         /// <summary>
         /// Returns a delegate to read rows from individual Parquet columns.
         /// </summary>
@@ -128,28 +141,54 @@ namespace ParquetSharp.RowOriented
             var tuples = Expression.Parameter(typeof(TTuple[]), "tuples");
             var length = Expression.Parameter(typeof(int), "length");
 
+            var allFields = DepthFirstFields(fields).ToArray();
+
             // Use constructor or the property setters.
             var ctor = typeof(TTuple).GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, fields.Select(f => f.Type).ToArray(), null);
 
-            // Buffers.
-            var buffers = fields.Select(f => Expression.Variable(f.Type.MakeArrayType(), $"buffer_{f.Name}")).ToArray();
-            var bufferAssigns = fields.Select((f, i) => (Expression) Expression.Assign(buffers[i], Expression.NewArrayBounds(f.Type, length))).ToArray();
+            // Create a buffer for all mapped fields, including parents of nested fields.
+            var buffers = allFields.ToDictionary(f => f.Field, f => Expression.Variable(f.Field.GetLogicalType(f.Level).MakeArrayType(), $"buffer_{f.Name}"));
+            var bufferAssigns = allFields.Select(f => (Expression) Expression.Assign(buffers[f.Field], Expression.NewArrayBounds(f.Field.GetLogicalType(f.Level), length))).ToArray();
 
-            // Read the columns from Parquet and populate the buffers.
-            var reads = buffers.Select((buffer, i) => Expression.Call(reader, GetReadMethod<TTuple>(fields[i].Type), Expression.Constant(i), buffer, length)).ToArray();
+            // Read the columns from Parquet and populate the leaf buffers.
+            var reads = allFields.Where(f => f.IsLeaf).Select((f, i) => Expression.Call(reader, GetReadMethod<TTuple>(f.Field.GetLogicalType(f.Level)), Expression.Constant(i), buffers[f.Field], length)).ToArray();
 
-            // Loop over the tuples, constructing them from the column buffers.
+            // Loop over the tuples, constructing them from the column buffers and constructing any necessary intermediate nested objects.
             var index = Expression.Variable(typeof(int), "index");
+            var constructRootObject = Expression.Assign(
+                Expression.ArrayAccess(tuples, index),
+                ctor == null
+                    ? Expression.MemberInit(Expression.New(typeof(TTuple)),
+                        fields.Select(f => Expression.Bind(f.Info, Expression.ArrayAccess(buffers[f], index))))
+                    : Expression.New(ctor,
+                        fields.Select(f => (Expression) Expression.ArrayAccess(buffers[f], index)))
+            );
+            var loopExpressions = new List<Expression>();
+            foreach (var field in DepthFirstFields(fields))
+            {
+                if (!field.IsLeaf)
+                {
+                    // TODO: Handle nullable objects
+                    var children = field.Field.Children;
+                    var childLevel = field.Level + 1;
+                    var fieldCtor = field.Field.Type.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, children.Select(f => f.Type).ToArray(), null);
+                    var constructionExpression = Expression.Assign(
+                        Expression.ArrayAccess(buffers[field.Field], index),
+                        fieldCtor == null
+                            ? Expression.MemberInit(Expression.New(field.Field.Type),
+                                children.Select(f => Expression.Bind(f.Info, Expression.MakeMemberAccess(Expression.ArrayAccess(buffers[f], index), f.GetLogicalType(childLevel).GetField("Value")))))
+                            : Expression.New(fieldCtor,
+                                children.Select(f => (Expression) Expression.MakeMemberAccess(Expression.ArrayAccess(buffers[f], index), f.GetLogicalType(childLevel).GetField("Value"))))
+                    );
+                    loopExpressions.Add(constructionExpression);
+                }
+            }
+            loopExpressions.Add(constructRootObject);
             var loop = For(index, Expression.Constant(0), Expression.NotEqual(index, length), Expression.PreIncrementAssign(index),
-                Expression.Assign(
-                    Expression.ArrayAccess(tuples, index),
-                    ctor == null
-                        ? Expression.MemberInit(Expression.New(typeof(TTuple)), fields.Select((f, i) => Expression.Bind(f.Info, Expression.ArrayAccess(buffers[i], index))))
-                        : (Expression) Expression.New(ctor, fields.Select((f, i) => (Expression) Expression.ArrayAccess(buffers[i], index)))
-                )
+                Expression.Block(loopExpressions)
             );
 
-            var body = Expression.Block(buffers, bufferAssigns.Concat(reads).Concat(new[] {loop}));
+            var body = Expression.Block(buffers.Values.ToArray(), bufferAssigns.Concat(reads).Concat(new[] {loop}));
             var lambda = Expression.Lambda<ParquetRowReader<TTuple>.ReadAction>(body, reader, tuples, length);
             OnReadExpressionCreated?.Invoke(lambda);
             return lambda.Compile();
