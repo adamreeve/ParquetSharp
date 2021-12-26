@@ -63,10 +63,16 @@ namespace ParquetSharp
             if (elementType.IsArray && elementType != typeof(byte[]))
             {
                 if (schemaNodes.Length >= 2 &&
-                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType, Repetition: Repetition.Optional} &&
+                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType, Repetition: Repetition.Optional or Repetition.Required} listGroupNode &&
                     schemaNodes[1] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Repeated})
                 {
-                    return MakeArrayReader(schemaNodes, elementType, (short) repetitionLevel, (short) nullDefinitionLevel);
+                    return MakeArrayReader(
+                        schemaNodes,
+                        elementType,
+                        (short) repetitionLevel,
+                        (short) nullDefinitionLevel,
+                        listGroupNode.Repetition == Repetition.Optional
+                    );
                 }
 
                 throw new Exception("elementType is an array but schema does not match the expected layout");
@@ -169,9 +175,16 @@ namespace ParquetSharp
         }
 
         private Func<int, Array> MakeArrayReader(Node[] schemaNodes,
-            Type elementType, short repetitionLevel, short nullDefinitionLevel)
+            Type elementType, short repetitionLevel, short nullDefinitionLevel, bool isArrayOptional)
         {
-            var innerReader = MakeReader(schemaNodes.Skip(2).ToArray(), elementType.GetElementType(), repetitionLevel + 1, nullDefinitionLevel + 2, false);
+            var innerNullDefinitionLevel = nullDefinitionLevel + (isArrayOptional ? 2 : 1);
+
+            var innerReader = MakeReader(
+                schemaNodes.Skip(2).ToArray(),
+                elementType.GetElementType(),
+                repetitionLevel + 1,
+                innerNullDefinitionLevel,
+                false);
 
             return numArrayEntriesToRead =>
             {
@@ -183,13 +196,13 @@ namespace ParquetSharp
 
                     Array? newItem = null;
 
-                    if (defn.DefLevel >= nullDefinitionLevel + 2)
+                    if (defn.DefLevel >= innerNullDefinitionLevel)
                     {
                         newItem = innerReader(-1);
                     }
                     else
                     {
-                        if (defn.DefLevel == nullDefinitionLevel + 1)
+                        if (!isArrayOptional || defn.DefLevel == nullDefinitionLevel + 1)
                         {
                             newItem = CreateEmptyArray(elementType);
                         }

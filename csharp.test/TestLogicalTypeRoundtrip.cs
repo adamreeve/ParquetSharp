@@ -444,6 +444,100 @@ namespace ParquetSharp.Test
         }
 
         [Test]
+        public static void TestRoundtripRequiredArrays()
+        {
+            var schemaNode = CreateRequiredArraySchemaNode();
+
+            var items = new[]
+            {
+                new [] {1, 2, 3},
+                new int[0],
+                new [] {4, 5, 6}
+            };
+
+            using var buffer = new ResizableBuffer();
+
+            using (var outStream = new BufferOutputStream(buffer))
+            {
+                var writerProperties = new WriterPropertiesBuilder().Build();
+                using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
+                using var rowGroupWriter = fileWriter.AppendRowGroup();
+
+                using var colWriter = rowGroupWriter.NextColumn().LogicalWriter<int[]>();
+                colWriter.WriteBatch(items);
+
+                fileWriter.Close();
+            }
+
+            // Read it back.
+            using var inStream = new BufferReader(buffer);
+            using var fileReader = new ParquetFileReader(inStream);
+            using var rowGroup = fileReader.RowGroup(0);
+
+            var column = rowGroup.Column(0);
+            var columnReader = column.LogicalReader<int[]>();
+            var itemsActual = columnReader.ReadAll(3);
+
+            Assert.AreEqual(items, itemsActual);
+        }
+
+        [Test]
+        public static void TestRequiredArraysThrowsIfWritingNull()
+        {
+            var schemaNode = CreateRequiredArraySchemaNode();
+
+            var items = new int[][]
+            {
+                new [] {1, 2, 3},
+                null!,
+                new [] {4, 5, 6}
+            };
+
+            using var buffer = new ResizableBuffer();
+
+            using var outStream = new BufferOutputStream(buffer);
+            var writerProperties = new WriterPropertiesBuilder().Build();
+            using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
+            using var rowGroupWriter = fileWriter.AppendRowGroup();
+
+            using var colWriter = rowGroupWriter.NextColumn().LogicalWriter<int[]>();
+
+            Assert.Throws<InvalidOperationException>(() => colWriter.WriteBatch(items));
+
+            fileWriter.Close();
+        }
+
+        private static GroupNode CreateRequiredArraySchemaNode()
+        {
+            return new GroupNode(
+                "schema",
+                Repetition.Required,
+                new Node[]
+                {
+                    // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
+                    // The outer-most level must be a group annotated with LIST that contains a single field named list.
+                    // The repetition of this level must be either optional or required and determines whether the list is nullable.
+                    new GroupNode(
+                        "required_array",
+                        Repetition.Required,
+                        new Node[]
+                        {
+                            new GroupNode(
+                                "list",
+                                Repetition.Repeated,
+                                new Node[]
+                                {
+                                    new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32)
+                                }
+                            )
+                        },
+                        LogicalType.List()
+                    )
+                }
+            );
+        }
+
+        [Test]
         public static void TestBigArrayRoundtrip()
         {
             // Create a big array of float arrays. Try to detect buffer-size related issues.

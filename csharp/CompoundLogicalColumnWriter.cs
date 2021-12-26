@@ -73,7 +73,7 @@ namespace ParquetSharp
             if (elementType.IsArray && elementType != typeof(byte[]))
             {
                 if (schemaNodes.Length >= 2 &&
-                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType, Repetition: Repetition.Optional} &&
+                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType, Repetition: Repetition.Optional or Repetition.Required } listGroupNode &&
                     schemaNodes[1] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Repeated})
                 {
                     var containedType = elementType.GetElementType();
@@ -83,7 +83,8 @@ namespace ParquetSharp
                         containedType,
                         nullDefinitionLevel,
                         repetitionLevel,
-                        firstLeafRepLevel
+                        firstLeafRepLevel,
+                        listGroupNode.Repetition == Repetition.Optional
                     );
                 }
 
@@ -110,12 +111,16 @@ namespace ParquetSharp
             throw new Exception("ParquetSharp does not understand the schema used");
         }
 
-        private Action<Array> MakeArrayWriter(Node[] schemaNodes, Type elementType, short nullDefinitionLevel, short repetitionLevel, short firstLeafRepLevel)
+        private Action<Array> MakeArrayWriter(Node[] schemaNodes, Type elementType, short nullDefinitionLevel, short repetitionLevel, short firstLeafRepLevel, bool isArrayOptional)
         {
             var columnWriter = (ColumnWriter<TPhysical>) Source;
 
-            var writer0 = MakeWriter(schemaNodes, elementType, (short) (repetitionLevel + 1), (short) (nullDefinitionLevel + 2), firstLeafRepLevel, false);
-            var writer = MakeWriter(schemaNodes, elementType, (short) (repetitionLevel + 1), (short) (nullDefinitionLevel + 2), repetitionLevel, false);
+            var innerNullDefinitionLevel = (short)(nullDefinitionLevel + (isArrayOptional ? 2 : 1));
+
+            var writer0 = MakeWriter(schemaNodes, elementType, (short) (repetitionLevel + 1),
+                innerNullDefinitionLevel, firstLeafRepLevel, false);
+            var writer = MakeWriter(schemaNodes, elementType, (short) (repetitionLevel + 1),
+                innerNullDefinitionLevel, repetitionLevel, false);
 
             return values =>
             {
@@ -139,13 +144,21 @@ namespace ParquetSharp
                         else
                         {
                             // Write that we have a zero length array
-                            columnWriter.WriteBatchSpaced(1, new[] {(short) (nullDefinitionLevel + 1)}, new[] {currentLeafRepLevel}, new byte[] {0}, 0, new TPhysical[] { });
+                            columnWriter.WriteBatchSpaced(1, new[] {(short) (nullDefinitionLevel + (isArrayOptional ? 1 : 0))},
+                                new[] {currentLeafRepLevel}, new byte[] {0}, 0, new TPhysical[] { });
                         }
                     }
                     else
                     {
-                        // Write that this item is null
-                        columnWriter.WriteBatchSpaced(1, new[] {nullDefinitionLevel}, new[] {currentLeafRepLevel}, new byte[] {0}, 0, new TPhysical[] { });
+                        if (isArrayOptional)
+                        {
+                            // Write that this item is null
+                            columnWriter.WriteBatchSpaced(1, new[] { nullDefinitionLevel }, new[] { currentLeafRepLevel }, new byte[] { 0 }, 0, new TPhysical[] { });
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException("Cannot write a null array value for a required array column");
+                        }
                     }
                 }
             };
@@ -315,10 +328,4 @@ namespace ParquetSharp
         private readonly LogicalWrite<TLogical, TPhysical>.Converter _converter;
         private readonly Action<Array> _writer;
     }
-
-    internal interface IBatchWriter<TElement>
-    {
-        void WriteBatch(ReadOnlySpan<TElement> values);
-    }
-
 }
