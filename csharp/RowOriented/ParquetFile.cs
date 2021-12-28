@@ -151,7 +151,11 @@ namespace ParquetSharp.RowOriented
             var bufferAssigns = allFields.Select(f => (Expression) Expression.Assign(buffers[f.Field], Expression.NewArrayBounds(f.Field.LogicalType, length))).ToArray();
 
             // Read the columns from Parquet and populate the leaf buffers.
-            var reads = allFields.Where(f => f.IsLeaf).Select((f, i) => Expression.Call(reader, GetReadMethod<TTuple>(f.Field.LogicalType), Expression.Constant(i), buffers[f.Field], length)).ToArray();
+            var reads = allFields
+                .Where(f => f.IsLeaf)
+                .Select((f, i) => Expression.Call(
+                    reader, GetReadMethod<TTuple>(f.Field.LogicalType), Expression.Constant(i), buffers[f.Field], length))
+                .ToArray();
 
             // Loop over the tuples, constructing them from the column buffers and constructing any necessary intermediate nested objects.
             var index = Expression.Variable(typeof(int), "index");
@@ -168,17 +172,9 @@ namespace ParquetSharp.RowOriented
             {
                 if (!field.IsLeaf)
                 {
-                    var children = field.Field.Children;
-                    var fieldCtor = field.Field.Type.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, children.Select(f => f.Type).ToArray(), null);
-                    var constructionExpression = Expression.Assign(
-                        Expression.ArrayAccess(buffers[field.Field], index),
-                        fieldCtor == null
-                            ? Expression.MemberInit(Expression.New(field.Field.Type),
-                                children.Select(f => Expression.Bind(f.Info, GetValueExpression(Expression.ArrayAccess(buffers[f], index), f))))
-                            : Expression.New(fieldCtor,
-                                children.Select(f => GetValueExpression(Expression.ArrayAccess(buffers[f], index), f)))
-                    );
-                    loopExpressions.Add(constructionExpression);
+                    var constructionExpression = NestedStructConstruction(field.Field, buffers, index);
+                    loopExpressions.Add(Expression.Assign(
+                        Expression.ArrayAccess(buffers[field.Field], index), constructionExpression));
                 }
             }
             loopExpressions.Add(constructRootObject);
@@ -190,6 +186,45 @@ namespace ParquetSharp.RowOriented
             var lambda = Expression.Lambda<ParquetRowReader<TTuple>.ReadAction>(body, reader, tuples, length);
             OnReadExpressionCreated?.Invoke(lambda);
             return lambda.Compile();
+        }
+
+        private static Expression NestedStructConstruction(
+            MappedField field, IReadOnlyDictionary<MappedField, ParameterExpression> buffers,
+            ParameterExpression loopIndex)
+        {
+            var children = field.Children;
+            var fieldType = field.Type;
+            var nullable = false;
+            if (fieldType.IsGenericType && fieldType.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                fieldType = fieldType.GetGenericArguments().Single();
+                nullable = true;
+            }
+
+            var fieldCtor = fieldType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, children.Select(f => f.Type).ToArray(), null);
+            var constructionExpression =
+                fieldCtor == null
+                    ? (Expression) Expression.MemberInit(Expression.New(fieldType),
+                        children.Select(f => Expression.Bind(f.Info,
+                            GetValueExpression(Expression.ArrayAccess(buffers[f], loopIndex), f))))
+                    : Expression.New(fieldCtor,
+                        children.Select(f => GetValueExpression(Expression.ArrayAccess(buffers[f], loopIndex), f)));
+
+            if (nullable)
+            {
+                // For nullable fields, we need to check that nested children are non-null before assigning
+                var firstChild = children.First();
+                var valueCheck = Expression.MakeMemberAccess(
+                    Expression.ArrayAccess(buffers[firstChild], loopIndex), firstChild.LogicalType.GetProperty("HasValue")!);
+                // Construct a nullable value rather than the plain field type
+                var nullableConstructor = field.Type.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new [] {fieldType}, null);
+                var makeNullableExpression = Expression.New(nullableConstructor!, constructionExpression);
+
+                constructionExpression =
+                    Expression.Condition(valueCheck, makeNullableExpression, Expression.Constant(null, field.Type));
+            }
+
+            return constructionExpression;
         }
 
         /// <summary>
