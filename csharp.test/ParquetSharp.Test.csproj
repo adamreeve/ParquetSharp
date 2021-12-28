@@ -34,6 +34,9 @@
     <None Update="TestFiles\nested2.parquet">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="TestFiles\nested_nullable.parquet">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 

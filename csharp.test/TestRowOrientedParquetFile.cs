@@ -7,10 +7,10 @@ using ParquetSharp.IO;
 using ParquetSharp.RowOriented;
 using NUnit.Framework;
 using System.Linq;
+using System.Reflection;
 
 #if DUMP_EXPRESSION_TREES
 using System.Linq.Expressions;
-using System.Reflection;
 #endif
 
 namespace ParquetSharp.Test
@@ -277,7 +277,7 @@ namespace ParquetSharp.Test
         [Test]
         public static void TestNestedObjectRead()
         {
-            var directory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            var directory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             var path = Path.Combine(directory!, "TestFiles/nested2.parquet");
             using var reader = ParquetFile.CreateRowReader<RowWithNesting>(path);
 
@@ -287,6 +287,38 @@ namespace ParquetSharp.Test
             Assert.AreEqual(rows[0].Nested.R!, 2);
             Assert.AreEqual(rows[0].S, 7);
 
+            Assert.AreEqual(rows[1].Nested.Q, 3);
+            Assert.IsNull(rows[1].Nested.R);
+            Assert.AreEqual(rows[1].S, 8);
+
+            Assert.AreEqual(rows[2].Nested.Q, 5);
+            Assert.AreEqual(rows[2].Nested.R!, 6);
+            Assert.AreEqual(rows[2].S, 9);
+        }
+
+        [Test]
+        public static void TestNullableNestedObjectRead()
+        {
+            var directory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            var path = Path.Combine(directory!, "TestFiles/nested_nullable.parquet");
+            using var reader = ParquetFile.CreateRowReader<RowWithNullableNesting>(path);
+
+            var rows = reader.ReadRows(0);
+
+            Assert.AreEqual(rows[0].Nested?.Q, 1);
+            Assert.AreEqual(rows[0].Nested?.R, 2);
+            Assert.AreEqual(rows[0].S, 7);
+
+            Assert.AreEqual(rows[1].Nested?.Q, 3);
+            Assert.IsNull(rows[1].Nested?.R);
+            Assert.AreEqual(rows[1].S, 8);
+
+            Assert.AreEqual(rows[2].Nested?.Q, 5);
+            Assert.AreEqual(rows[2].Nested?.R, 6);
+            Assert.IsNull(rows[2].S);
+
+            Assert.IsNull(rows[3].Nested);
+            Assert.AreEqual(rows[3].S, 9.0);
         }
 
         private struct NestedGroup
@@ -305,6 +337,15 @@ namespace ParquetSharp.Test
 
             [MapToColumn("C")]
             public int S { get; set; }
+        }
+
+        private struct RowWithNullableNesting
+        {
+            [MapToGroup("N")]
+            public NestedGroup? Nested { get; set; }
+
+            [MapToColumn("C")]
+            public int? S { get; set; }
         }
 
 #if DUMP_EXPRESSION_TREES
