@@ -118,16 +118,16 @@ namespace ParquetSharp.RowOriented
             return (columns, (ParquetRowWriter<TTuple>.WriteAction) writeDelegate);
         }
 
-        private static IEnumerable<(string Name, MappedField Field, bool IsLeaf, int Level)> DepthFirstFields(MappedField[] fields, string path="", int level=0)
+        private static IEnumerable<(string Name, MappedField Field, bool IsLeaf)> DepthFirstFields(MappedField[] fields, string path="")
         {
             foreach (var field in fields)
             {
                 var fieldPath = path + "_" + field.SchemaName;
-                foreach (var leaf in DepthFirstFields(field.Children, fieldPath, level + 1))
+                foreach (var leaf in DepthFirstFields(field.Children, fieldPath))
                 {
                     yield return leaf;
                 }
-                yield return (fieldPath, field, field.Children.Length == 0, level);
+                yield return (fieldPath, field, field.Children.Length == 0);
             }
         }
 
@@ -147,11 +147,11 @@ namespace ParquetSharp.RowOriented
             var ctor = typeof(TTuple).GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, fields.Select(f => f.Type).ToArray(), null);
 
             // Create a buffer for all mapped fields, including parents of nested fields.
-            var buffers = allFields.ToDictionary(f => f.Field, f => Expression.Variable(f.Field.GetLogicalType(f.Level).MakeArrayType(), $"buffer_{f.Name}"));
-            var bufferAssigns = allFields.Select(f => (Expression) Expression.Assign(buffers[f.Field], Expression.NewArrayBounds(f.Field.GetLogicalType(f.Level), length))).ToArray();
+            var buffers = allFields.ToDictionary(f => f.Field, f => Expression.Variable(f.Field.LogicalType.MakeArrayType(), $"buffer_{f.Name}"));
+            var bufferAssigns = allFields.Select(f => (Expression) Expression.Assign(buffers[f.Field], Expression.NewArrayBounds(f.Field.LogicalType, length))).ToArray();
 
             // Read the columns from Parquet and populate the leaf buffers.
-            var reads = allFields.Where(f => f.IsLeaf).Select((f, i) => Expression.Call(reader, GetReadMethod<TTuple>(f.Field.GetLogicalType(f.Level)), Expression.Constant(i), buffers[f.Field], length)).ToArray();
+            var reads = allFields.Where(f => f.IsLeaf).Select((f, i) => Expression.Call(reader, GetReadMethod<TTuple>(f.Field.LogicalType), Expression.Constant(i), buffers[f.Field], length)).ToArray();
 
             // Loop over the tuples, constructing them from the column buffers and constructing any necessary intermediate nested objects.
             var index = Expression.Variable(typeof(int), "index");
@@ -168,17 +168,15 @@ namespace ParquetSharp.RowOriented
             {
                 if (!field.IsLeaf)
                 {
-                    // TODO: Handle nullable objects
                     var children = field.Field.Children;
-                    var childLevel = field.Level + 1;
                     var fieldCtor = field.Field.Type.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, children.Select(f => f.Type).ToArray(), null);
                     var constructionExpression = Expression.Assign(
                         Expression.ArrayAccess(buffers[field.Field], index),
                         fieldCtor == null
                             ? Expression.MemberInit(Expression.New(field.Field.Type),
-                                children.Select(f => Expression.Bind(f.Info, Expression.MakeMemberAccess(Expression.ArrayAccess(buffers[f], index), f.GetLogicalType(childLevel).GetField("Value")))))
+                                children.Select(f => Expression.Bind(f.Info, GetValueExpression(Expression.ArrayAccess(buffers[f], index), f))))
                             : Expression.New(fieldCtor,
-                                children.Select(f => (Expression) Expression.MakeMemberAccess(Expression.ArrayAccess(buffers[f], index), f.GetLogicalType(childLevel).GetField("Value"))))
+                                children.Select(f => GetValueExpression(Expression.ArrayAccess(buffers[f], index), f)))
                     );
                     loopExpressions.Add(constructionExpression);
                 }
@@ -192,6 +190,23 @@ namespace ParquetSharp.RowOriented
             var lambda = Expression.Lambda<ParquetRowReader<TTuple>.ReadAction>(body, reader, tuples, length);
             OnReadExpressionCreated?.Invoke(lambda);
             return lambda.Compile();
+        }
+
+        /// <summary>
+        /// Return an expression for getting the leaf value from a potentially nested type
+        /// </summary>
+        /// <param name="logicalValueExpression"></param>
+        /// <param name="field"></param>
+        /// <returns></returns>
+        private static Expression GetValueExpression(Expression logicalValueExpression, MappedField field)
+        {
+            var valueExpression = logicalValueExpression;
+            foreach (var member in field.GetValueMemberChain())
+            {
+                valueExpression = Expression.MakeMemberAccess(valueExpression, member);
+            }
+
+            return valueExpression;
         }
 
         /// <summary>
@@ -284,10 +299,25 @@ namespace ParquetSharp.RowOriented
             );
         }
 
-        private static MappedField[] GetFieldsAndProperties(Type type)
+        private static MappedField[] GetFieldsAndProperties(Type type, bool[]? parentNullability=null)
         {
             var list = new List<MappedField>();
             var flags = BindingFlags.Public | BindingFlags.Instance;
+            if (parentNullability == null)
+            {
+                parentNullability = Array.Empty<bool>();
+            }
+            else
+            {
+                var nullable = false;
+                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+                {
+                    type = type.GetGenericArguments().Single();
+                    nullable = true;
+                }
+                parentNullability = new [] {nullable}.Concat(parentNullability).ToArray();
+            }
+
 
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ValueTuple<,,,,,,,>))
             {
@@ -299,9 +329,9 @@ namespace ParquetSharp.RowOriented
                 var mappedGroup = field.GetCustomAttribute<MapToGroupAttribute>()?.GroupName;
                 var children = mappedGroup == null
                     ? Array.Empty<MappedField>()
-                    : GetFieldsAndProperties(field.FieldType);
+                    : GetFieldsAndProperties(field.FieldType, parentNullability);
                 var mappedColumn = field.GetCustomAttribute<MapToColumnAttribute>()?.ColumnName ?? mappedGroup;
-                list.Add(new MappedField(field, mappedColumn, field.FieldType, children));
+                list.Add(new MappedField(field, mappedColumn, field.FieldType, children, parentNullability));
             }
 
             foreach (var property in type.GetProperties(flags))
@@ -309,9 +339,9 @@ namespace ParquetSharp.RowOriented
                 var mappedGroup = property.GetCustomAttribute<MapToGroupAttribute>()?.GroupName;
                 var children = mappedGroup == null
                     ? Array.Empty<MappedField>()
-                    : GetFieldsAndProperties(property.PropertyType);
+                    : GetFieldsAndProperties(property.PropertyType, parentNullability);
                 var mappedColumn = property.GetCustomAttribute<MapToColumnAttribute>()?.ColumnName ?? mappedGroup;
-                list.Add(new MappedField(property, mappedColumn, property.PropertyType, children));
+                list.Add(new MappedField(property, mappedColumn, property.PropertyType, children, parentNullability));
             }
 
             // The order in which fields are processed is important given that when a tuple type is used in
