@@ -27,7 +27,7 @@ namespace ParquetSharp.RowOriented
         public string SchemaName => MappedSchemaName ?? Info.Name;
 
         /// <summary>
-        /// Get array of members that must be accessed to reach the non-nested value
+        /// Get an array of members that must be accessed from an instance of the logical type to reach the non-nested value
         /// </summary>
         public MemberInfo[] GetValueMemberChain()
         {
@@ -60,7 +60,6 @@ namespace ParquetSharp.RowOriented
         /// <summary>
         /// Apply any nesting to get the final logical type of the leaf column
         /// </summary>
-        /// <returns></returns>
         private static Type GetLogicalType(Type type, bool[] parentNullability)
         {
             foreach (var nullable in parentNullability)
