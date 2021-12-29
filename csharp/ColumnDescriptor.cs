@@ -74,17 +74,30 @@ namespace ParquetSharp
             {
                 if (node.Repetition == Repetition.Repeated)
                 {
+                    // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
+                    // Lists:
                     // - "The middle level, named list, must be a repeated group with a single field named element."
                     //   The middle level being this.
                     // - "The outer-most level must be a group annotated with LIST that contains a single field named list.
                     //   The repetition of this level must be either optional or required and determines whether the list is nullable."
                     //   Arrays are automatically nullable, so skip over it.
-                    if (node.Parent == null || node.Parent.LogicalType.Type != LogicalTypeEnum.List || node.Parent.Repetition is not (Repetition.Optional or Repetition.Required))
+                    // Maps:
+                    // - "The outer-most level must be a group annotated with MAP that contains a single field named key_value.
+                    //    The repetition of this level must be either optional or required and determines whether the list is nullable."
+                    // - "The middle level, named key_value, must be a repeated group with a key field for map keys and, optionally,
+                    //    a value field for map values."
+                    // - "The key field encodes the map's key type. This field must have repetition required and must always be present.
+                    //   The value field encodes the map's value type and repetition. This field can be required, optional, or omitted."
+                    if (node.Parent != null && node.Parent.LogicalType.Type is LogicalTypeEnum.List or LogicalTypeEnum.Map
+                        && node.Parent.Repetition is Repetition.Optional or Repetition.Required)
+                    {
+                        elementType = elementType.MakeArrayType();
+                        node = node.Parent; // skip the outer level
+                    }
+                    else
                     {
                         throw new Exception("Schema not according to Parquet spec");
                     }
-                    elementType = elementType.MakeArrayType();
-                    node = node.Parent; // skip the outer level
                 }
                 else if (node.Repetition == Repetition.Optional)
                 {

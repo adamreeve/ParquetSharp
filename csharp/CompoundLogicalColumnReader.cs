@@ -63,15 +63,14 @@ namespace ParquetSharp
             if (elementType.IsArray && elementType != typeof(byte[]))
             {
                 if (schemaNodes.Length >= 2 &&
-                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType, Repetition: Repetition.Optional or Repetition.Required} listGroupNode &&
+                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType or MapLogicalType, Repetition: Repetition.Optional or Repetition.Required} &&
                     schemaNodes[1] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Repeated})
                 {
                     return MakeArrayReader(
                         schemaNodes,
                         elementType,
                         (short) repetitionLevel,
-                        (short) nullDefinitionLevel,
-                        listGroupNode.Repetition == Repetition.Optional
+                        (short) nullDefinitionLevel
                     );
                 }
 
@@ -175,9 +174,35 @@ namespace ParquetSharp
         }
 
         private Func<int, Array> MakeArrayReader(Node[] schemaNodes,
-            Type elementType, short repetitionLevel, short nullDefinitionLevel, bool isArrayOptional)
+            Type elementType, short repetitionLevel, short nullDefinitionLevel)
         {
-            var innerNullDefinitionLevel = nullDefinitionLevel + (isArrayOptional ? 2 : 1);
+            bool isArrayOptional;
+            int innerNullDefinitionLevel = 0;
+
+            if (schemaNodes.Length < 3)
+            {
+                throw new ArgumentException("Need at least 3 nodes for a map or array logical type column");
+            }
+
+            if (schemaNodes[0].LogicalType is MapLogicalType)
+            {
+                if (schemaNodes[0].Repetition != Repetition.Optional)
+                {
+                    throw new NotSupportedException();
+                }
+
+                isArrayOptional = false;
+                innerNullDefinitionLevel = nullDefinitionLevel + (isArrayOptional || schemaNodes[2].Repetition == Repetition.Optional ? 2 : 1);
+            }
+            else if (schemaNodes[0].LogicalType is ListLogicalType)
+            {
+                isArrayOptional = schemaNodes[0].Repetition == Repetition.Optional;
+                innerNullDefinitionLevel = nullDefinitionLevel + (isArrayOptional ? 2 : 1);
+            }
+            else
+            {
+                throw new NotSupportedException();
+            }
 
             var innerReader = MakeReader(
                 schemaNodes.Skip(2).ToArray(),

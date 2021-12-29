@@ -47,6 +47,20 @@ nested_structure = '''
 '''
 
 df = pd.io.json.read_json(nested_structure)
-parquetTable = pa.Table.from_pandas(df, preserve_index=False)
+parquet_table = pa.Table.from_pandas(df, preserve_index=False)
 print(parquetTable.schema)
-pq.write_table(parquetTable, 'nested.parquet', version='2.0')
+pq.write_table(parquet_table, 'nested.parquet', version='2.0')
+
+df = pd.DataFrame({
+        'col1': pd.Series([
+            [('key', 'aaaa'), ('value', '1111')],
+            [('key', 'bbbb'), ('value', '2222')],
+        ]),
+        'col2': pd.Series(['foo', 'bar'])
+    }
+)
+
+udt = pa.map_(pa.string(), pa.string())
+schema = pa.schema([pa.field('col1', udt), pa.field('col2', pa.string())])
+parquet_table = pa.Table.from_pandas(df, schema)
+pq.write_table(parquet_table, 'map.parquet')

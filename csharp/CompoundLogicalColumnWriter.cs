@@ -73,18 +73,17 @@ namespace ParquetSharp
             if (elementType.IsArray && elementType != typeof(byte[]))
             {
                 if (schemaNodes.Length >= 2 &&
-                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType, Repetition: Repetition.Optional or Repetition.Required } listGroupNode &&
+                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType or MapLogicalType, Repetition: Repetition.Optional or Repetition.Required } &&
                     schemaNodes[1] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Repeated})
                 {
                     var containedType = elementType.GetElementType();
 
                     return MakeArrayWriter(
-                        schemaNodes.Skip(2).ToArray(),
+                        schemaNodes,
                         containedType,
                         nullDefinitionLevel,
                         repetitionLevel,
-                        firstLeafRepLevel,
-                        listGroupNode.Repetition == Repetition.Optional
+                        firstLeafRepLevel
                     );
                 }
 
@@ -111,15 +110,41 @@ namespace ParquetSharp
             throw new Exception("ParquetSharp does not understand the schema used");
         }
 
-        private Action<Array> MakeArrayWriter(Node[] schemaNodes, Type elementType, short nullDefinitionLevel, short repetitionLevel, short firstLeafRepLevel, bool isArrayOptional)
+        private Action<Array> MakeArrayWriter(Node[] schemaNodes, Type elementType, short nullDefinitionLevel, short repetitionLevel, short firstLeafRepLevel)
         {
+            bool isArrayOptional;
+            short innerNullDefinitionLevel;
+
+            if (schemaNodes.Length < 3)
+            {
+                throw new ArgumentException("Need at least 3 nodes for a map or array logical type column");
+            }
+
+            if (schemaNodes[0].LogicalType is MapLogicalType)
+            {
+                if (schemaNodes[0].Repetition != Repetition.Optional)
+                {
+                    throw new NotSupportedException();
+                }
+
+                isArrayOptional = false;
+                innerNullDefinitionLevel = (short)(nullDefinitionLevel + 2);
+            }
+            else if (schemaNodes[0].LogicalType is ListLogicalType)
+            {
+                isArrayOptional = schemaNodes[0].Repetition == Repetition.Optional;
+                innerNullDefinitionLevel = (short)(nullDefinitionLevel + (isArrayOptional ? 2 : 1));
+            }
+            else
+            {
+                throw new NotSupportedException();
+            }
+
             var columnWriter = (ColumnWriter<TPhysical>) Source;
 
-            var innerNullDefinitionLevel = (short)(nullDefinitionLevel + (isArrayOptional ? 2 : 1));
-
-            var writer0 = MakeWriter(schemaNodes, elementType, (short) (repetitionLevel + 1),
+            var writer0 = MakeWriter(schemaNodes.Skip(2).ToArray(), elementType, (short) (repetitionLevel + 1),
                 innerNullDefinitionLevel, firstLeafRepLevel, false);
-            var writer = MakeWriter(schemaNodes, elementType, (short) (repetitionLevel + 1),
+            var writer = MakeWriter(schemaNodes.Skip(2).ToArray(), elementType, (short) (repetitionLevel + 1),
                 innerNullDefinitionLevel, repetitionLevel, false);
 
             return values =>
