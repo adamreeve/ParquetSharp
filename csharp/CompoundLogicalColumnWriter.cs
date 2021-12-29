@@ -112,33 +112,14 @@ namespace ParquetSharp
 
         private Action<Array> MakeArrayWriter(Node[] schemaNodes, Type elementType, short nullDefinitionLevel, short repetitionLevel, short firstLeafRepLevel)
         {
-            bool isArrayOptional;
-            short innerNullDefinitionLevel;
-
             if (schemaNodes.Length < 3)
             {
                 throw new ArgumentException("Need at least 3 nodes for a map or array logical type column");
             }
 
-            if (schemaNodes[0].LogicalType is MapLogicalType)
-            {
-                if (schemaNodes[0].Repetition != Repetition.Optional)
-                {
-                    throw new NotSupportedException();
-                }
+            bool isArrayOptional = schemaNodes[0].Repetition == Repetition.Optional;
 
-                isArrayOptional = false;
-                innerNullDefinitionLevel = (short) (nullDefinitionLevel + 2);
-            }
-            else if (schemaNodes[0].LogicalType is ListLogicalType)
-            {
-                isArrayOptional = schemaNodes[0].Repetition == Repetition.Optional;
-                innerNullDefinitionLevel = (short) (nullDefinitionLevel + (isArrayOptional ? 2 : 1));
-            }
-            else
-            {
-                throw new NotSupportedException();
-            }
+            var innerNullDefinitionLevel = (short)(nullDefinitionLevel + (isArrayOptional ? 2 : 1));
 
             var columnWriter = (ColumnWriter<TPhysical>) Source;
 

@@ -27,14 +27,32 @@ namespace ParquetSharp.Test
         }
 
         [Test]
-        public static void CanRoundtripMaps()
+        public static void CanRoundtripOptionalMaps()
         {
-            var schemaNode = CreateMapSchema();
+            var keys = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, null, new string[0] };
+            var values = new[] { new[] { "v1", "v2" }, new[] { "v3", "v4" }, null, new string[0] };
+
+            DoRoundtripTest(true, keys!, values!);
+        }
+
+        [Test]
+        public static void CanRoundtripRequiredMaps()
+        {
+            var keys = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, new string[0] };
+            var values = new[] { new[] { "v1", "v2" }, new[] { "v3", "v4" }, new string[0] };
+
+            DoRoundtripTest(false, keys, values);
+        }
+
+        [Test]
+        public static void NullsInRequiredMapGivesException()
+        {
+            var schemaNode = CreateMapSchema(false);
 
             using var buffer = new ResizableBuffer();
 
-            var keysExpected = new[] {new[] {"a", "b"}, new[] {"c", "d"}};
-            var valuesExpected = new[] {new[] {"e", "f"}, new[] {"g", "h"}};
+            var keysExpected = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, null, new string[0] };
+            var valuesExpected = new[] { new[] { "v1", "v2" }, new[] { "v3", "v4" }, null, new string[0] };
 
             using (var outStream = new BufferOutputStream(buffer))
             {
@@ -43,10 +61,31 @@ namespace ParquetSharp.Test
                 using var rowGroupWriter = fileWriter.AppendRowGroup();
 
                 using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
-                colWriterKeys.WriteBatch(keysExpected);
+                var exception = Assert.Throws<InvalidOperationException>(() => colWriterKeys.WriteBatch(keysExpected!))!;
+
+                Assert.AreEqual("Cannot write a null array value for a required array column", exception.Message);
+
+                fileWriter.Close();
+            }
+        }
+
+        private static void DoRoundtripTest(bool optional, string[][] keys, string[][] values)
+        {
+            var schemaNode = CreateMapSchema(optional);
+
+            using var buffer = new ResizableBuffer();
+
+            using (var outStream = new BufferOutputStream(buffer))
+            {
+                var writerProperties = new WriterPropertiesBuilder().Build();
+                using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
+                using var rowGroupWriter = fileWriter.AppendRowGroup();
+
+                using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
+                colWriterKeys.WriteBatch(keys);
 
                 using var colWriterValues = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
-                colWriterValues.WriteBatch(valuesExpected);
+                colWriterValues.WriteBatch(values);
 
                 fileWriter.Close();
             }
@@ -56,14 +95,14 @@ namespace ParquetSharp.Test
             using var fileReader = new ParquetFileReader(inStream);
             using var rowGroup = fileReader.RowGroup(0);
 
-            var keysActual = rowGroup.Column(0).LogicalReader<string[]>().ReadAll(2);
-            var valuesActual = rowGroup.Column(1).LogicalReader<string[]>().ReadAll(2);
+            var keysActual = rowGroup.Column(0).LogicalReader<string[]>().ReadAll(keys.Length);
+            var valuesActual = rowGroup.Column(1).LogicalReader<string[]>().ReadAll(values.Length);
 
-            Assert.AreEqual(keysExpected, keysActual);
-            Assert.AreEqual(valuesExpected, valuesActual);
+            Assert.AreEqual(keys, keysActual);
+            Assert.AreEqual(values, valuesActual);
         }
 
-        private static GroupNode CreateMapSchema()
+        private static GroupNode CreateMapSchema(bool optional)
         {
             return new GroupNode(
                 "schema",
@@ -72,7 +111,7 @@ namespace ParquetSharp.Test
                 {
                     new GroupNode(
                         "col1",
-                        Repetition.Optional,
+                        optional ? Repetition.Optional : Repetition.Required,
                         new Node[]
                         {
                             new GroupNode(

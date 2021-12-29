@@ -176,33 +176,14 @@ namespace ParquetSharp
         private Func<int, Array> MakeArrayReader(Node[] schemaNodes,
             Type elementType, short repetitionLevel, short nullDefinitionLevel)
         {
-            bool isArrayOptional;
-            int innerNullDefinitionLevel = 0;
-
             if (schemaNodes.Length < 3)
             {
                 throw new ArgumentException("Need at least 3 nodes for a map or array logical type column");
             }
 
-            if (schemaNodes[0].LogicalType is MapLogicalType)
-            {
-                if (schemaNodes[0].Repetition != Repetition.Optional)
-                {
-                    throw new NotSupportedException();
-                }
+            bool isArrayOptional = schemaNodes[0].Repetition == Repetition.Optional;
 
-                isArrayOptional = false;
-                innerNullDefinitionLevel = nullDefinitionLevel + (isArrayOptional || schemaNodes[2].Repetition == Repetition.Optional ? 2 : 1);
-            }
-            else if (schemaNodes[0].LogicalType is ListLogicalType)
-            {
-                isArrayOptional = schemaNodes[0].Repetition == Repetition.Optional;
-                innerNullDefinitionLevel = nullDefinitionLevel + (isArrayOptional ? 2 : 1);
-            }
-            else
-            {
-                throw new NotSupportedException();
-            }
+            var innerNullDefinitionLevel = nullDefinitionLevel + (isArrayOptional ? 2 : 1);
 
             var innerReader = MakeReader(
                 schemaNodes.Skip(2).ToArray(),
@@ -248,7 +229,7 @@ namespace ParquetSharp
 
         private Func<Array> MakeLeafReader(bool optional, short repetitionLevel, short nullDefinitionLevel)
         {
-            var definedLevel = (short) (nullDefinitionLevel + 1);
+            var definedLevel = (short) (nullDefinitionLevel + (optional ? 1 : 0));
 
             return () =>
             {
