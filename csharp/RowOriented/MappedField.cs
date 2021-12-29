@@ -11,20 +11,23 @@ namespace ParquetSharp.RowOriented
         public readonly string? MappedSchemaName;
         public readonly Type Type;
         public readonly Type LogicalType;
-        public readonly MappedField[] Children;
+        public readonly MappedField? Parent;
+        public MappedField[]? Children;
 
-        public MappedField(MemberInfo memberInfo, string? schemaName, Type type, MappedField[] children, bool[] parentNullability)
+        public MappedField(MemberInfo memberInfo, string? schemaName, Type type, MappedField? parent)
         {
             Info = memberInfo;
             MappedSchemaName = schemaName;
             Type = type;
-            Children = children;
-            LogicalType = GetLogicalType(type, parentNullability);
+            Parent = parent;
+            LogicalType = GetLogicalType(type, parent);
         }
 
         public string Name => Info.Name;
 
         public string SchemaName => MappedSchemaName ?? Info.Name;
+
+        public MappedField[] GetChildren() => Children ?? Array.Empty<MappedField>();
 
         /// <summary>
         /// Get an array of members that must be accessed from an instance of the logical type to reach the non-nested value
@@ -60,15 +63,16 @@ namespace ParquetSharp.RowOriented
         /// <summary>
         /// Apply any nesting to get the final logical type of the leaf column
         /// </summary>
-        private static Type GetLogicalType(Type type, bool[] parentNullability)
+        private static Type GetLogicalType(Type type, MappedField? parent)
         {
-            foreach (var nullable in parentNullability)
+            while (parent != null)
             {
                 type = typeof(Nested<>).MakeGenericType(type);
-                if (nullable)
+                if (parent.Type.IsGenericType && parent.Type.GetGenericTypeDefinition() == typeof(Nullable<>))
                 {
                     type = typeof(Nullable<>).MakeGenericType(type);
                 }
+                parent = parent.Parent;
             }
 
             return type;

@@ -116,7 +116,7 @@ namespace ParquetSharp.RowOriented
 
             private void SetColumnMapping(MappedField field, string schemaPath, Dictionary<string, int> fileColumns, ref int leafIndex)
             {
-                if (field.Children.Length == 0)
+                if (field.GetChildren().Length == 0)
                 {
                     if (fileColumns.TryGetValue(schemaPath, out var fileColumn))
                     {
@@ -133,7 +133,7 @@ namespace ParquetSharp.RowOriented
                 }
                 else
                 {
-                    foreach (var child in field.Children)
+                    foreach (var child in field.GetChildren())
                     {
                         var mappedNode = child.MappedSchemaName ?? throw new InvalidOperationException("mapped column name is null");
                         SetColumnMapping(child, schemaPath + "." + mappedNode, fileColumns, ref leafIndex);

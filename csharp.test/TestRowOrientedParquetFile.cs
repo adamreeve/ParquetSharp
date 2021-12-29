@@ -321,6 +321,49 @@ namespace ParquetSharp.Test
             Assert.AreEqual(rows[3].S, 9.0);
         }
 
+        [Test]
+        public static void TestNestedObjectWrite()
+        {
+            using var buffer = new ResizableBuffer();
+
+            var rows = new []
+            {
+                new RowWithNesting { Nested = new NestedGroup { Q = 1, R = 2}, S = 3},
+                new RowWithNesting { Nested = new NestedGroup { Q = 4, R = null}, S = 6},
+                new RowWithNesting { Nested = new NestedGroup { Q = 7, R = 8}, S = 7},
+            };
+
+            using (var outputStream = new BufferOutputStream(buffer))
+            {
+                using var writer = ParquetFile.CreateRowWriter<RowWithNesting>(outputStream);
+
+                writer.WriteRows(rows);
+                writer.Close();
+            }
+        }
+
+        [Test]
+        public static void TestNullableNestedObjectWrite()
+        {
+            using var buffer = new ResizableBuffer();
+
+            var rows = new []
+            {
+                new RowWithNullableNesting { Nested = new NestedGroup { Q = 1, R = 2}, S = 3},
+                new RowWithNullableNesting { Nested = new NestedGroup { Q = 4, R = null}, S = 6},
+                new RowWithNullableNesting { Nested = null, S = 7},
+                new RowWithNullableNesting { Nested = new NestedGroup { Q = 9, R = 9}, S = null},
+            };
+
+            using (var outputStream = new BufferOutputStream(buffer))
+            {
+                using var writer = ParquetFile.CreateRowWriter<RowWithNullableNesting>(outputStream);
+
+                writer.WriteRows(rows);
+                writer.Close();
+            }
+        }
+
         private struct NestedGroup
         {
             [MapToColumn("A")]
