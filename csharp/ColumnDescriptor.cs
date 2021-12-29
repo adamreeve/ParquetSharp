@@ -88,8 +88,7 @@ namespace ParquetSharp
                     //    a value field for map values."
                     // - "The key field encodes the map's key type. This field must have repetition required and must always be present.
                     //   The value field encodes the map's value type and repetition. This field can be required, optional, or omitted."
-                    if (node.Parent != null && node.Parent.LogicalType.Type is LogicalTypeEnum.List or LogicalTypeEnum.Map
-                        && node.Parent.Repetition is Repetition.Optional or Repetition.Required)
+                    if (node.Parent != null && node.Parent.LogicalType.Type is LogicalTypeEnum.List or LogicalTypeEnum.Map && node.Parent.Repetition is Repetition.Optional or Repetition.Required)
                     {
                         elementType = elementType.MakeArrayType();
                         node = node.Parent; // skip the outer level

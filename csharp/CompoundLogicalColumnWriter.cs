@@ -73,7 +73,7 @@ namespace ParquetSharp
             if (elementType.IsArray && elementType != typeof(byte[]))
             {
                 if (schemaNodes.Length >= 2 &&
-                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType or MapLogicalType, Repetition: Repetition.Optional or Repetition.Required } &&
+                    schemaNodes[0] is GroupNode {LogicalType: ListLogicalType or MapLogicalType, Repetition: Repetition.Optional or Repetition.Required} &&
                     schemaNodes[1] is GroupNode {LogicalType: NoneLogicalType, Repetition: Repetition.Repeated})
                 {
                     var containedType = elementType.GetElementType();
@@ -128,12 +128,12 @@ namespace ParquetSharp
                 }
 
                 isArrayOptional = false;
-                innerNullDefinitionLevel = (short)(nullDefinitionLevel + 2);
+                innerNullDefinitionLevel = (short) (nullDefinitionLevel + 2);
             }
             else if (schemaNodes[0].LogicalType is ListLogicalType)
             {
                 isArrayOptional = schemaNodes[0].Repetition == Repetition.Optional;
-                innerNullDefinitionLevel = (short)(nullDefinitionLevel + (isArrayOptional ? 2 : 1));
+                innerNullDefinitionLevel = (short) (nullDefinitionLevel + (isArrayOptional ? 2 : 1));
             }
             else
             {
@@ -178,7 +178,7 @@ namespace ParquetSharp
                         if (isArrayOptional)
                         {
                             // Write that this item is null
-                            columnWriter.WriteBatchSpaced(1, new[] { nullDefinitionLevel }, new[] { currentLeafRepLevel }, new byte[] { 0 }, 0, new TPhysical[] { });
+                            columnWriter.WriteBatchSpaced(1, new[] {nullDefinitionLevel}, new[] {currentLeafRepLevel}, new byte[] {0}, 0, new TPhysical[] { });
                         }
                         else
                         {

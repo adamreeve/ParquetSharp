@@ -33,8 +33,8 @@ namespace ParquetSharp.Test
 
             using var buffer = new ResizableBuffer();
 
-            var keysExpected = new[] { new[] { "a", "b" }, new[] { "c", "d" } };
-            var valuesExpected = new[] { new[] { "e", "f" }, new[] { "g", "h" } };
+            var keysExpected = new[] {new[] {"a", "b"}, new[] {"c", "d"}};
+            var valuesExpected = new[] {new[] {"e", "f"}, new[] {"g", "h"}};
 
             using (var outStream = new BufferOutputStream(buffer))
             {
@@ -68,17 +68,17 @@ namespace ParquetSharp.Test
             return new GroupNode(
                 "schema",
                 Repetition.Required,
-                new Node []
-                { 
+                new Node[]
+                {
                     new GroupNode(
                         "col1",
                         Repetition.Optional,
-                        new Node []
+                        new Node[]
                         {
                             new GroupNode(
                                 "key_value",
                                 Repetition.Repeated,
-                                new Node []
+                                new Node[]
                                 {
                                     new PrimitiveNode("key", Repetition.Required, LogicalType.String(), PhysicalType.ByteArray),
                                     new PrimitiveNode("value", Repetition.Optional, LogicalType.String(), PhysicalType.ByteArray)

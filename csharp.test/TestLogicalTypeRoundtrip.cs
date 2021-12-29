@@ -450,9 +450,9 @@ namespace ParquetSharp.Test
 
             var items = new[]
             {
-                new [] {1, 2, 3},
+                new[] {1, 2, 3},
                 new int[0],
-                new [] {4, 5, 6}
+                new[] {4, 5, 6}
             };
 
             using var buffer = new ResizableBuffer();
@@ -488,9 +488,9 @@ namespace ParquetSharp.Test
 
             var items = new int[][]
             {
-                new [] {1, 2, 3},
+                new[] {1, 2, 3},
                 null!,
-                new [] {4, 5, 6}
+                new[] {4, 5, 6}
             };
 
             using var buffer = new ResizableBuffer();
