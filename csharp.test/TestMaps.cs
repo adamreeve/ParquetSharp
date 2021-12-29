@@ -29,8 +29,8 @@ namespace ParquetSharp.Test
         [Test]
         public static void CanRoundtripOptionalMaps()
         {
-            var keys = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, null, new string[0] };
-            var values = new[] { new[] { "v1", "v2" }, new[] { "v3", "v4" }, null, new string[0] };
+            var keys = new[] {new[] {"k1", "k2"}, new[] {"k3", "k4"}, null, new string[0]};
+            var values = new[] {new[] {"v1", "v2"}, new[] {"v3", "v4"}, null, new string[0]};
 
             DoRoundtripTest(true, keys!, values!);
         }
@@ -38,35 +38,34 @@ namespace ParquetSharp.Test
         [Test]
         public static void CanRoundtripRequiredMaps()
         {
-            var keys = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, new string[0] };
-            var values = new[] { new[] { "v1", "v2" }, new[] { "v3", "v4" }, new string[0] };
+            var keys = new[] {new[] {"k1", "k2"}, new[] {"k3", "k4"}, new string[0]};
+            var values = new[] {new[] {"v1", "v2"}, new[] {"v3", "v4"}, new string[0]};
 
             DoRoundtripTest(false, keys, values);
         }
 
         [Test]
-        public static void NullsInRequiredMapGivesException()
+        public static void NullsInRequiredMapGiveException()
         {
             var schemaNode = CreateMapSchema(false);
 
             using var buffer = new ResizableBuffer();
+            using var outStream = new BufferOutputStream(buffer);
+            var writerProperties = new WriterPropertiesBuilder().Build();
+            using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
+            using var rowGroupWriter = fileWriter.AppendRowGroup();
+            using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
 
-            var keysExpected = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, null, new string[0] };
-            var valuesExpected = new[] { new[] { "v1", "v2" }, new[] { "v3", "v4" }, null, new string[0] };
+            var keysExpected = new[] {new[] {"k1", "k2"}, new[] {"k3", "k4"}, null, new string[0]};
+            var valuesExpected = new[] {new[] {"v1", "v2"}, new[] {"v3", "v4"}, null, new string[0]};
 
-            using (var outStream = new BufferOutputStream(buffer))
-            {
-                var writerProperties = new WriterPropertiesBuilder().Build();
-                using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
-                using var rowGroupWriter = fileWriter.AppendRowGroup();
+            // Writing a column containing a null should throw an exception because the schema says values are required
+            var exception = Assert.Throws<InvalidOperationException>(() => colWriterKeys.WriteBatch(keysExpected!))!;
+            Assert.AreEqual("Cannot write a null array value for a required array column", exception.Message);
 
-                using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
-                var exception = Assert.Throws<InvalidOperationException>(() => colWriterKeys.WriteBatch(keysExpected!))!;
-
-                Assert.AreEqual("Cannot write a null array value for a required array column", exception.Message);
-
-                fileWriter.Close();
-            }
+            // We will also get an exception because we haven't written any data
+            var closeException = Assert.Throws<ParquetException>(() => fileWriter.Close())!;
+            Assert.IsTrue(closeException.Message.Contains("Only 0 out of 2 columns are initialized"));
         }
 
         private static void DoRoundtripTest(bool optional, string[][] keys, string[][] values)

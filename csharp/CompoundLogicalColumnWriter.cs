@@ -119,7 +119,7 @@ namespace ParquetSharp
 
             bool isArrayOptional = schemaNodes[0].Repetition == Repetition.Optional;
 
-            var innerNullDefinitionLevel = (short)(nullDefinitionLevel + (isArrayOptional ? 2 : 1));
+            var innerNullDefinitionLevel = (short) (nullDefinitionLevel + (isArrayOptional ? 2 : 1));
 
             var columnWriter = (ColumnWriter<TPhysical>) Source;
 
