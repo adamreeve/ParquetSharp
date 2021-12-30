@@ -108,7 +108,7 @@ namespace ParquetSharp.RowOriented
             var (schema, writeDelegate) = WriteDelegates.GetOrAdd(typeof(TTuple), k => CreateWriteDelegate<TTuple>());
             if (columnNames != null)
             {
-                // TODO: Fix this, maybe only allow column names for non-nested?
+                // TODO: Fix this, maybe only allow column names for non-nested? Also, add a test to exercise this!
                 //if (columnNames.Length != columns.Length)
                 //{
                 //    throw new ArgumentException("the length of column names does not mach the number of public fields and properties", nameof(columnNames));
@@ -200,9 +200,9 @@ namespace ParquetSharp.RowOriented
             var children = field.GetChildren();
             var fieldType = field.Type;
             var nullable = false;
-            if (fieldType.IsGenericType && fieldType.GetGenericTypeDefinition() == typeof(Nullable<>))
+            if (IsNullable(fieldType, out var interiorType))
             {
-                fieldType = fieldType.GetGenericArguments().Single();
+                fieldType = interiorType;
                 nullable = true;
             }
 
@@ -306,7 +306,8 @@ namespace ParquetSharp.RowOriented
                 }
                 else
                 {
-                    var groupNode = GetGroupNode(field.SchemaName, false, leafNodes.ToArray());
+                    var nullable = IsNullable(field.Type, out _);
+                    var groupNode = GetGroupNode(field.SchemaName, nullable, leafNodes.ToArray());
                     leafNodes = new List<Node> {groupNode};
                 }
             }
@@ -317,7 +318,7 @@ namespace ParquetSharp.RowOriented
         /// <summary>
         /// Return an expression for getting the leaf-level logical type value to write
         /// </summary>
-        private static Expression GetNestedValue(Expression rootObjectInstance, MappedField leafField)
+        private static Expression GetNestedValue(Expression rootObjectInstance, MappedField leafField, int checkedDepth = -1)
         {
             var parentStack = new List<MappedField>();
             MappedField? field = leafField;
@@ -330,6 +331,7 @@ namespace ParquetSharp.RowOriented
             var leafExpression = rootObjectInstance;
 
             // First go down the hierarchy, getting values
+            var depth = 0;
             while (parentStack.Count != 0)
             {
                 var parent = parentStack.Last();
@@ -337,9 +339,26 @@ namespace ParquetSharp.RowOriented
                 leafExpression = Expression.PropertyOrField(leafExpression, parent.Name);
                 if (IsNullable(leafExpression.Type, out _))
                 {
-                    // TODO: Handle branching for null parents
-                    leafExpression = Expression.PropertyOrField(leafExpression, "Value");
+                    if (depth > checkedDepth)
+                    {
+                        // Add check for a value, and in the true case, recurse back in but set the
+                        // checked depth so that we don't enter this branch again and assume we have a non-null value.
+                        var nestedValue = GetNestedValue(rootObjectInstance, leafField, depth);
+                        return Expression.Condition(
+                            Expression.PropertyOrField(leafExpression, "HasValue"),
+                            nestedValue,
+                            // TODO: For multiple nested levels, this won't always be null,
+                            // but might be non-null at an intermediate level
+                            Expression.Constant(null, nestedValue.Type)
+                        );
+                    }
+                    else
+                    {
+                        // We know we have a valid value at this point, just get it
+                        leafExpression = Expression.PropertyOrField(leafExpression, "Value");
+                    }
                 }
+                ++depth;
             }
             leafExpression = Expression.PropertyOrField(leafExpression, leafField.Name);
 
@@ -410,9 +429,9 @@ namespace ParquetSharp.RowOriented
             var list = new List<MappedField>();
             var flags = BindingFlags.Public | BindingFlags.Instance;
 
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+            if (IsNullable(type, out var interiorType))
             {
-                type = type.GetGenericArguments().Single();
+                type = interiorType;
             }
 
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ValueTuple<,,,,,,,>))
@@ -491,18 +510,6 @@ namespace ParquetSharp.RowOriented
         private static GroupNode GetGroupNode(string groupName, bool nullable, Node[] children)
         {
             return new GroupNode(groupName, nullable ? Repetition.Optional : Repetition.Required, children);
-        }
-
-        private static bool IsNested(Type type, out Type nestedType)
-        {
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nested<>))
-            {
-                nestedType = type.GetGenericArguments().Single();
-                return true;
-            }
-
-            nestedType = typeof(object);
-            return false;
         }
 
         private static bool IsNullable(Type type, out Type interiorType)
