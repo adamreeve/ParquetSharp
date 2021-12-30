@@ -275,93 +275,83 @@ namespace ParquetSharp.Test
         }
 
         [Test]
-        public static void TestNestedObjectRead()
-        {
-            var directory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            var path = Path.Combine(directory!, "TestFiles/nested2.parquet");
-            using var reader = ParquetFile.CreateRowReader<RowWithNesting>(path);
-
-            var rows = reader.ReadRows(0);
-
-            Assert.AreEqual(rows[0].Nested.Q, 1);
-            Assert.AreEqual(rows[0].Nested.R!, 2);
-            Assert.AreEqual(rows[0].S, 7);
-
-            Assert.AreEqual(rows[1].Nested.Q, 3);
-            Assert.IsNull(rows[1].Nested.R);
-            Assert.AreEqual(rows[1].S, 8);
-
-            Assert.AreEqual(rows[2].Nested.Q, 5);
-            Assert.AreEqual(rows[2].Nested.R!, 6);
-            Assert.AreEqual(rows[2].S, 9);
-        }
-
-        [Test]
-        public static void TestNullableNestedObjectRead()
-        {
-            var directory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            var path = Path.Combine(directory!, "TestFiles/nested_nullable.parquet");
-            using var reader = ParquetFile.CreateRowReader<RowWithNullableNesting>(path);
-
-            var rows = reader.ReadRows(0);
-
-            Assert.AreEqual(rows[0].Nested?.Q, 1);
-            Assert.AreEqual(rows[0].Nested?.R, 2);
-            Assert.AreEqual(rows[0].S, 7);
-
-            Assert.AreEqual(rows[1].Nested?.Q, 3);
-            Assert.IsNull(rows[1].Nested?.R);
-            Assert.AreEqual(rows[1].S, 8);
-
-            Assert.AreEqual(rows[2].Nested?.Q, 5);
-            Assert.AreEqual(rows[2].Nested?.R, 6);
-            Assert.IsNull(rows[2].S);
-
-            Assert.IsNull(rows[3].Nested);
-            Assert.AreEqual(rows[3].S, 9.0);
-        }
-
-        [Test]
-        public static void TestNestedObjectWrite()
+        public static void TestNestedObjectRoundTrip()
         {
             using var buffer = new ResizableBuffer();
 
-            var rows = new []
+            var rowsToWrite = new[]
             {
-                new RowWithNesting { Nested = new NestedGroup { Q = 1, R = 2}, S = 3},
-                new RowWithNesting { Nested = new NestedGroup { Q = 4, R = null}, S = 6},
-                new RowWithNesting { Nested = new NestedGroup { Q = 7, R = 8}, S = 7},
+                new RowWithNesting {Nested = new NestedGroup {Q = 1, R = 2}, S = 3},
+                new RowWithNesting {Nested = new NestedGroup {Q = 4, R = null}, S = 5},
+                new RowWithNesting {Nested = new NestedGroup {Q = 6, R = 7}, S = 8},
             };
 
             using (var outputStream = new BufferOutputStream(buffer))
             {
                 using var writer = ParquetFile.CreateRowWriter<RowWithNesting>(outputStream);
 
-                writer.WriteRows(rows);
+                writer.WriteRows(rowsToWrite);
                 writer.Close();
             }
+
+            using var inputStream = new BufferReader(buffer);
+            using var reader = ParquetFile.CreateRowReader<RowWithNesting>(inputStream);
+
+            var rows = reader.ReadRows(0);
+
+            Assert.AreEqual(rows[0].Nested.Q, 1);
+            Assert.AreEqual(rows[0].Nested.R!, 2);
+            Assert.AreEqual(rows[0].S, 3);
+
+            Assert.AreEqual(rows[1].Nested.Q, 4);
+            Assert.IsNull(rows[1].Nested.R);
+            Assert.AreEqual(rows[1].S, 5);
+
+            Assert.AreEqual(rows[2].Nested.Q, 6);
+            Assert.AreEqual(rows[2].Nested.R!, 7);
+            Assert.AreEqual(rows[2].S, 8);
         }
 
         [Test]
-        public static void TestNullableNestedObjectWrite()
+        public static void TestNullableNestedObjectRoundTrip()
         {
             using var buffer = new ResizableBuffer();
 
-            var rows = new []
+            var rowsToWrite = new[]
             {
-                new RowWithNullableNesting { Nested = new NestedGroup { Q = 1, R = 2}, S = 3},
-                new RowWithNullableNesting { Nested = new NestedGroup { Q = 4, R = null}, S = 6},
-                new RowWithNullableNesting { Nested = null, S = 7},
-                new RowWithNullableNesting { Nested = new NestedGroup { Q = 9, R = 9}, S = null},
+                new RowWithNullableNesting {Nested = new NestedGroup {Q = 1, R = 2}, S = 3},
+                new RowWithNullableNesting {Nested = new NestedGroup {Q = 4, R = null}, S = 5},
+                new RowWithNullableNesting {Nested = null, S = 6},
+                new RowWithNullableNesting {Nested = new NestedGroup {Q = 7, R = 8}, S = null},
             };
 
             using (var outputStream = new BufferOutputStream(buffer))
             {
                 using var writer = ParquetFile.CreateRowWriter<RowWithNullableNesting>(outputStream);
 
-                writer.WriteRows(rows);
+                writer.WriteRows(rowsToWrite);
                 writer.Close();
             }
+
+            using var inputStream = new BufferReader(buffer);
+            using var reader = ParquetFile.CreateRowReader<RowWithNullableNesting>(inputStream);
+
+            var rows = reader.ReadRows(0);
+
+            Assert.AreEqual(rows[0].Nested?.Q, 1);
+            Assert.AreEqual(rows[0].Nested?.R, 2);
+            Assert.AreEqual(rows[0].S, 3);
+
+            Assert.AreEqual(rows[1].Nested?.Q, 4);
+            Assert.IsNull(rows[1].Nested?.R);
+            Assert.AreEqual(rows[1].S, 5);
+
+            Assert.IsNull(rows[2].Nested);
+            Assert.AreEqual(rows[2].S, 6);
+
+            Assert.AreEqual(rows[3].Nested?.Q, 7);
+            Assert.AreEqual(rows[3].Nested?.R, 8);
+            Assert.IsNull(rows[3].S);
         }
 
         private struct NestedGroup
