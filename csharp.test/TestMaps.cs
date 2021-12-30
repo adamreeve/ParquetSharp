@@ -47,58 +47,69 @@ namespace ParquetSharp.Test
         [Test]
         public static void NullsInRequiredMapGiveException()
         {
-            var schemaNode = CreateMapSchema(false);
+            var pool = MemoryPool.GetDefaultMemoryPool();
+            Assert.AreEqual(0, pool.BytesAllocated);
 
-            using var buffer = new ResizableBuffer();
-            using var outStream = new BufferOutputStream(buffer);
-            var writerProperties = new WriterPropertiesBuilder().Build();
-            using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
-            using var rowGroupWriter = fileWriter.AppendRowGroup();
-            using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
+            using (var buffer = new ResizableBuffer())
+            {
+                using var outStream = new BufferOutputStream(buffer);
+                var writerProperties = new WriterPropertiesBuilder().Build();
+                var schemaNode = CreateMapSchema(false);
+                using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
+                using var rowGroupWriter = fileWriter.AppendRowGroup();
+                using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
 
-            var keysExpected = new[] {new[] {"k1", "k2"}, new[] {"k3", "k4"}, null, new string[0]};
-            var valuesExpected = new[] {new[] {"v1", "v2"}, new[] {"v3", "v4"}, null, new string[0]};
+                var keysExpected = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, null, new string[0] };
+                var valuesExpected = new[] { new[] { "v1", "v2" }, new[] { "v3", "v4" }, null, new string[0] };
 
-            // Writing a column containing a null should throw an exception because the schema says values are required
-            var exception = Assert.Throws<InvalidOperationException>(() => colWriterKeys.WriteBatch(keysExpected!))!;
-            Assert.AreEqual("Cannot write a null array value for a required array column", exception.Message);
+                // Writing a column containing a null should throw an exception because the schema says values are required
+                var exception = Assert.Throws<InvalidOperationException>(() => colWriterKeys.WriteBatch(keysExpected!))!;
+                Assert.AreEqual("Cannot write a null array value for a required array column", exception.Message);
 
-            // We will also get an exception because we haven't written any data
-            var closeException = Assert.Throws<ParquetException>(() => fileWriter.Close())!;
-            Assert.IsTrue(closeException.Message.Contains("Only 0 out of 2 columns are initialized"));
+                // We will also get an exception because we haven't written any data
+                var closeException = Assert.Throws<ParquetException>(() => fileWriter.Close())!;
+                Assert.IsTrue(closeException.Message.Contains("Only 0 out of 2 columns are initialized"));
+            }
+
+            Assert.AreEqual(0, pool.BytesAllocated);
         }
 
         private static void DoRoundtripTest(bool optional, string[][] keys, string[][] values)
         {
-            var schemaNode = CreateMapSchema(optional);
+            var pool = MemoryPool.GetDefaultMemoryPool();
+            Assert.AreEqual(0, pool.BytesAllocated);
 
-            using var buffer = new ResizableBuffer();
-
-            using (var outStream = new BufferOutputStream(buffer))
+            using (var buffer = new ResizableBuffer())
             {
-                var writerProperties = new WriterPropertiesBuilder().Build();
-                using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
-                using var rowGroupWriter = fileWriter.AppendRowGroup();
+                using (var outStream = new BufferOutputStream(buffer))
+                {
+                    var writerProperties = new WriterPropertiesBuilder().Build();
+                    var schemaNode = CreateMapSchema(optional);
+                    using var fileWriter = new ParquetFileWriter(outStream, schemaNode, writerProperties);
+                    using var rowGroupWriter = fileWriter.AppendRowGroup();
 
-                using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
-                colWriterKeys.WriteBatch(keys);
+                    using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
+                    colWriterKeys.WriteBatch(keys);
 
-                using var colWriterValues = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
-                colWriterValues.WriteBatch(values);
+                    using var colWriterValues = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
+                    colWriterValues.WriteBatch(values);
 
-                fileWriter.Close();
+                    fileWriter.Close();
+                }
+
+                // Read it back.
+                using var inStream = new BufferReader(buffer);
+                using var fileReader = new ParquetFileReader(inStream);
+                using var rowGroup = fileReader.RowGroup(0);
+
+                var keysActual = rowGroup.Column(0).LogicalReader<string[]>().ReadAll(keys.Length);
+                var valuesActual = rowGroup.Column(1).LogicalReader<string[]>().ReadAll(values.Length);
+
+                Assert.AreEqual(keys, keysActual);
+                Assert.AreEqual(values, valuesActual);
             }
 
-            // Read it back.
-            using var inStream = new BufferReader(buffer);
-            using var fileReader = new ParquetFileReader(inStream);
-            using var rowGroup = fileReader.RowGroup(0);
-
-            var keysActual = rowGroup.Column(0).LogicalReader<string[]>().ReadAll(keys.Length);
-            var valuesActual = rowGroup.Column(1).LogicalReader<string[]>().ReadAll(values.Length);
-
-            Assert.AreEqual(keys, keysActual);
-            Assert.AreEqual(values, valuesActual);
+            Assert.AreEqual(0, pool.BytesAllocated);
         }
 
         private static GroupNode CreateMapSchema(bool optional)

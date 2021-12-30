@@ -63,62 +63,58 @@ namespace ParquetSharp.Test
 
         private void CreateParquetFile(ResizableBuffer buffer)
         {
-            using (var output = new BufferOutputStream(buffer))
-            using (var fileWriter = new ParquetFileWriter(output, CreateFloatColumns(), keyValueMetadata: _keyValueProperties))
+            using var output = new BufferOutputStream(buffer);
+            using var fileWriter = new ParquetFileWriter(output, CreateFloatColumns(), keyValueMetadata: _keyValueProperties);
+            using var rowGroupWriter = fileWriter.AppendRowGroup();
+
+            using (var dateTimeWriter = rowGroupWriter.NextColumn().LogicalWriter<DateTime>())
             {
-                using var rowGroupWriter = fileWriter.AppendRowGroup();
-
-                using (var dateTimeWriter = rowGroupWriter.NextColumn().LogicalWriter<DateTime>())
+                for (int i = 0; i != _dates.Length; ++i)
                 {
-                    for (int i = 0; i != _dates.Length; ++i)
-                    {
-                        dateTimeWriter.WriteBatch(Enumerable.Repeat(_dates[i], _objectIds.Length).ToArray());
-                    }
+                    dateTimeWriter.WriteBatch(Enumerable.Repeat(_dates[i], _objectIds.Length).ToArray());
                 }
-
-                using (var objectIdWriter = rowGroupWriter.NextColumn().LogicalWriter<int>())
-                {
-                    for (int i = 0; i != _dates.Length; ++i)
-                    {
-                        objectIdWriter.WriteBatch(_objectIds);
-                    }
-                }
-
-                using (var valueWriter = rowGroupWriter.NextColumn().LogicalWriter<float>())
-                {
-                    for (int i = 0; i != _dates.Length; ++i)
-                    {
-                        valueWriter.WriteBatch(_values[i]);
-                    }
-                }
-
-                fileWriter.Close();
             }
+
+            using (var objectIdWriter = rowGroupWriter.NextColumn().LogicalWriter<int>())
+            {
+                for (int i = 0; i != _dates.Length; ++i)
+                {
+                    objectIdWriter.WriteBatch(_objectIds);
+                }
+            }
+
+            using (var valueWriter = rowGroupWriter.NextColumn().LogicalWriter<float>())
+            {
+                for (int i = 0; i != _dates.Length; ++i)
+                {
+                    valueWriter.WriteBatch(_values[i]);
+                }
+            }
+
+            fileWriter.Close();
         }
 
         private void ReadParquetFile(ResizableBuffer buffer, MemoryPool pool)
         {
-            using (var input = new BufferReader(buffer))
-            using (var fileReader = new ParquetFileReader(input))
-            {
-                var kvp = fileReader.FileMetaData.KeyValueMetadata;
+            using var input = new BufferReader(buffer);
+            using var fileReader = new ParquetFileReader(input);
+            var kvp = fileReader.FileMetaData.KeyValueMetadata;
 
-                Assert.AreEqual(_keyValueProperties, kvp);
+            Assert.AreEqual(_keyValueProperties, kvp);
 
-                using var rowGroupReader = fileReader.RowGroup(0);
+            using var rowGroupReader = fileReader.RowGroup(0);
 
-                var numRows = checked((int) rowGroupReader.MetaData.NumRows);
+            var numRows = checked((int)rowGroupReader.MetaData.NumRows);
 
-                using var dateTimeReader = rowGroupReader.Column(0).LogicalReader<DateTime>();
-                using var objectIdReader = rowGroupReader.Column(1).LogicalReader<int>();
-                using var valueReader = rowGroupReader.Column(2).LogicalReader<float>();
+            using var dateTimeReader = rowGroupReader.Column(0).LogicalReader<DateTime>();
+            using var objectIdReader = rowGroupReader.Column(1).LogicalReader<int>();
+            using var valueReader = rowGroupReader.Column(2).LogicalReader<float>();
 
-                dateTimeReader.ReadAll(numRows);
-                objectIdReader.ReadAll(numRows);
-                valueReader.ReadAll(numRows);
+            dateTimeReader.ReadAll(numRows);
+            objectIdReader.ReadAll(numRows);
+            valueReader.ReadAll(numRows);
 
-                fileReader.Close();
-            }
+            fileReader.Close();
         }
 
         private static Column[] CreateFloatColumns()
