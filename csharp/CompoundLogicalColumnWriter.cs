@@ -177,15 +177,6 @@ namespace ParquetSharp
             short repetitionLevel, short leafFirstRepLevel,
             short leafDefinitionLevel, short nullDefinitionLevel)
         {
-            if (DefLevels == null)
-            {
-                throw new InvalidOperationException("DefLevels should not be null.");
-            }
-            if (RepLevels == null)
-            {
-                throw new InvalidOperationException("RepLevels should not be null.");
-            }
-
             var columnWriter = (ColumnWriter<TPhysical>) Source;
             var buffer = (TPhysical[]) Buffer;
 
@@ -204,16 +195,19 @@ namespace ParquetSharp
 
                     for (int i = 0; i < bufferLength; i++)
                     {
-                        RepLevels[i] = repetitionLevel;
+                        if (RepLevels != null)
+                        {
+                            RepLevels[i] = repetitionLevel;
+                        }
 
                         // If the leaves are required, we have to write the deflevel because the converter won't do this for us.
-                        if (nullDefinitionLevel == -1)
+                        if (nullDefinitionLevel == -1 && DefLevels != null)
                         {
                             DefLevels[i] = leafDefinitionLevel;
                         }
                     }
 
-                    if (firstItem)
+                    if (firstItem && RepLevels != null)
                     {
                         RepLevels[0] = leafFirstRepLevel;
                     }
@@ -231,11 +225,6 @@ namespace ParquetSharp
             short repetitionLevel, short leafFirstRepLevel,
             short leafDefinitionLevel, short nullDefinitionLevel)
         {
-            if (DefLevels == null)
-            {
-                throw new InvalidOperationException("DefLevels should not be null.");
-            }
-
             var columnWriter = (ColumnWriter<TPhysical>) Source;
             var buffer = (TPhysical[]) Buffer;
 
@@ -251,7 +240,7 @@ namespace ParquetSharp
                 _converter(valuesSpan, DefLevels, buffer, nullDefinitionLevel);
 
                 // If the leaves are required, we have to write the deflevel because the converter won't do this for us.
-                if (nullDefinitionLevel == -1)
+                if (nullDefinitionLevel == -1 && DefLevels != null)
                 {
                     DefLevels[0] = leafDefinitionLevel;
                 }

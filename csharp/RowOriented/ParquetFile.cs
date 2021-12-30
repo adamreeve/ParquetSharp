@@ -5,6 +5,7 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using ParquetSharp.IO;
+using ParquetSharp.Schema;
 
 namespace ParquetSharp.RowOriented
 {
@@ -60,8 +61,8 @@ namespace ParquetSharp.RowOriented
             Compression compression = Compression.Snappy,
             IReadOnlyDictionary<string, string>? keyValueMetadata = null)
         {
-            var (columns, writeDelegate) = GetOrCreateWriteDelegate<TTuple>(columnNames);
-            return new ParquetRowWriter<TTuple>(path, columns, compression, keyValueMetadata, writeDelegate);
+            var (schema, writeDelegate) = GetOrCreateWriteDelegate<TTuple>(columnNames);
+            return new ParquetRowWriter<TTuple>(path, schema, compression, keyValueMetadata, writeDelegate);
         }
 
         public static ParquetRowWriter<TTuple> CreateRowWriter<TTuple>(
@@ -70,8 +71,8 @@ namespace ParquetSharp.RowOriented
             string[]? columnNames = null,
             IReadOnlyDictionary<string, string>? keyValueMetadata = null)
         {
-            var (columns, writeDelegate) = GetOrCreateWriteDelegate<TTuple>(columnNames);
-            return new ParquetRowWriter<TTuple>(path, columns, writerProperties, keyValueMetadata, writeDelegate);
+            var (schema, writeDelegate) = GetOrCreateWriteDelegate<TTuple>(columnNames);
+            return new ParquetRowWriter<TTuple>(path, schema, writerProperties, keyValueMetadata, writeDelegate);
         }
 
         /// <summary>
@@ -83,8 +84,8 @@ namespace ParquetSharp.RowOriented
             Compression compression = Compression.Snappy,
             IReadOnlyDictionary<string, string>? keyValueMetadata = null)
         {
-            var (columns, writeDelegate) = GetOrCreateWriteDelegate<TTuple>(columnNames);
-            return new ParquetRowWriter<TTuple>(outputStream, columns, compression, keyValueMetadata, writeDelegate);
+            var (schema, writeDelegate) = GetOrCreateWriteDelegate<TTuple>(columnNames);
+            return new ParquetRowWriter<TTuple>(outputStream, schema, compression, keyValueMetadata, writeDelegate);
         }
 
         public static ParquetRowWriter<TTuple> CreateRowWriter<TTuple>(
@@ -93,8 +94,8 @@ namespace ParquetSharp.RowOriented
             string[]? columnNames = null,
             IReadOnlyDictionary<string, string>? keyValueMetadata = null)
         {
-            var (columns, writeDelegate) = GetOrCreateWriteDelegate<TTuple>(columnNames);
-            return new ParquetRowWriter<TTuple>(outputStream, columns, writerProperties, keyValueMetadata, writeDelegate);
+            var (schema, writeDelegate) = GetOrCreateWriteDelegate<TTuple>(columnNames);
+            return new ParquetRowWriter<TTuple>(outputStream, schema, writerProperties, keyValueMetadata, writeDelegate);
         }
 
         private static ParquetRowReader<TTuple>.ReadAction GetOrCreateReadDelegate<TTuple>(MappedField[] fields)
@@ -102,20 +103,21 @@ namespace ParquetSharp.RowOriented
             return (ParquetRowReader<TTuple>.ReadAction) ReadDelegatesCache.GetOrAdd(typeof(TTuple), k => CreateReadDelegate<TTuple>(fields));
         }
 
-        private static (Column[] columns, ParquetRowWriter<TTuple>.WriteAction writeDelegate) GetOrCreateWriteDelegate<TTuple>(string[]? columnNames)
+        private static (GroupNode schema, ParquetRowWriter<TTuple>.WriteAction writeDelegate) GetOrCreateWriteDelegate<TTuple>(string[]? columnNames)
         {
-            var (columns, writeDelegate) = WriteDelegates.GetOrAdd(typeof(TTuple), k => CreateWriteDelegate<TTuple>());
+            var (schema, writeDelegate) = WriteDelegates.GetOrAdd(typeof(TTuple), k => CreateWriteDelegate<TTuple>());
             if (columnNames != null)
             {
-                if (columnNames.Length != columns.Length)
-                {
-                    throw new ArgumentException("the length of column names does not mach the number of public fields and properties", nameof(columnNames));
-                }
+                // TODO: Fix this, maybe only allow column names for non-nested?
+                //if (columnNames.Length != columns.Length)
+                //{
+                //    throw new ArgumentException("the length of column names does not mach the number of public fields and properties", nameof(columnNames));
+                //}
 
-                columns = columns.Select((c, i) => new Column(c.LogicalSystemType, columnNames[i], c.LogicalTypeOverride, c.Length)).ToArray();
+                //columns = columns.Select((c, i) => new Column(c.LogicalSystemType, columnNames[i], c.LogicalTypeOverride, c.Length)).ToArray();
             }
 
-            return (columns, (ParquetRowWriter<TTuple>.WriteAction) writeDelegate);
+            return (schema, (ParquetRowWriter<TTuple>.WriteAction) writeDelegate);
         }
 
         private static IEnumerable<(string VarSuffix, MappedField Field, bool IsLeaf)> DepthFirstFields(MappedField[] fields, string parentVarSuffix = "")
@@ -195,7 +197,7 @@ namespace ParquetSharp.RowOriented
             MappedField field, IReadOnlyDictionary<MappedField, ParameterExpression> buffers,
             ParameterExpression loopIndex)
         {
-            var children = field.Children;
+            var children = field.GetChildren();
             var fieldType = field.Type;
             var nullable = false;
             if (fieldType.IsGenericType && fieldType.GetGenericTypeDefinition() == typeof(Nullable<>))
@@ -249,14 +251,10 @@ namespace ParquetSharp.RowOriented
         /// <summary>
         /// Return a delegate to write rows to individual Parquet columns, as well the column types and names.
         /// </summary>
-        private static (Column[] columns, ParquetRowWriter<TTuple>.WriteAction writeDelegate) CreateWriteDelegate<TTuple>()
+        private static (GroupNode, ParquetRowWriter<TTuple>.WriteAction writeDelegate) CreateWriteDelegate<TTuple>()
         {
             var fields = GetFieldsAndProperties(typeof(TTuple));
-            // TODO: Support creating a nested schema instead of a flat list of columns
-            var columns = DepthFirstFields(fields)
-                .Where(f => f.Field.GetChildren().Length == 0)
-                .Select(f  => GetColumn(f.Field))
-                .ToArray();
+            var schemaNode = BuildSchemaNode(fields);
 
             // Parameters
             var writer = Expression.Parameter(typeof(ParquetRowWriter<TTuple>), "writer");
@@ -266,9 +264,9 @@ namespace ParquetSharp.RowOriented
             var columnBodies = DepthFirstFields(fields).Where(f => f.IsLeaf).Select(f =>
             {
                 // Column buffer
-                var bufferType = f.Field.Type.MakeArrayType();
+                var bufferType = f.Field.LogicalType.MakeArrayType();
                 var buffer = Expression.Variable(bufferType, $"buffer_{f.VarSuffix}");
-                var bufferAssign = Expression.Assign(buffer, Expression.NewArrayBounds(f.Field.Type, length));
+                var bufferAssign = Expression.Assign(buffer, Expression.NewArrayBounds(f.Field.LogicalType, length));
                 var bufferReset = Expression.Assign(buffer, Expression.Constant(null, bufferType));
 
                 // Loop over the tuples and fill the current column buffer.
@@ -294,7 +292,26 @@ namespace ParquetSharp.RowOriented
             var body = Expression.Block(columnBodies);
             var lambda = Expression.Lambda<ParquetRowWriter<TTuple>.WriteAction>(body, writer, tuples, length);
             OnWriteExpressionCreated?.Invoke(lambda);
-            return (columns, lambda.Compile());
+            return (schemaNode, lambda.Compile());
+        }
+
+        private static GroupNode BuildSchemaNode(MappedField[] fields)
+        {
+            var leafNodes = new List<Node>();
+            foreach (var (_, field, isLeaf) in DepthFirstFields(fields))
+            {
+                if (isLeaf)
+                {
+                    leafNodes.Add(GetNode(field));
+                }
+                else
+                {
+                    var groupNode = GetGroupNode(field.SchemaName, false, leafNodes.ToArray());
+                    leafNodes = new List<Node> {groupNode};
+                }
+            }
+
+            return GetGroupNode("schema", false, leafNodes.ToArray());
         }
 
         /// <summary>
@@ -304,18 +321,42 @@ namespace ParquetSharp.RowOriented
         {
             var parentStack = new List<MappedField>();
             MappedField? field = leafField;
-            while (field != null)
+            while (field.Parent != null)
             {
-                parentStack.Add(field);
+                parentStack.Add(field.Parent);
                 field = field.Parent;
             }
+
             var leafExpression = rootObjectInstance;
-            // TODO: Handle branching for null parents, then return default value
+
+            // First go down the hierarchy, getting values
             while (parentStack.Count != 0)
             {
                 var parent = parentStack.Last();
                 parentStack.RemoveAt(parentStack.Count - 1);
                 leafExpression = Expression.PropertyOrField(leafExpression, parent.Name);
+                if (IsNullable(leafExpression.Type, out _))
+                {
+                    // TODO: Handle branching for null parents
+                    leafExpression = Expression.PropertyOrField(leafExpression, "Value");
+                }
+            }
+            leafExpression = Expression.PropertyOrField(leafExpression, leafField.Name);
+
+            // Then go back up the hierarchy, nesting the value to return
+            field = leafField;
+            while (field.Parent != null)
+            {
+                var nestedType = typeof(Nested<>).MakeGenericType(leafExpression.Type);
+                var nestedCtor = nestedType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {leafExpression.Type}, null);
+                leafExpression = Expression.New(nestedCtor!, leafExpression);
+                if (IsNullable(field.Parent.Type, out _))
+                {
+                    var nullableType = typeof(Nullable<>).MakeGenericType(leafExpression.Type);
+                    var nullableCtor = nullableType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {leafExpression.Type}, null);
+                    leafExpression = Expression.New(nullableCtor!, leafExpression);
+                }
+                field = field.Parent;
             }
 
             return leafExpression;
@@ -442,10 +483,44 @@ namespace ParquetSharp.RowOriented
             return new Column(field.Type, field.SchemaName, isDecimal ? LogicalType.Decimal(29, decimalScale!.Scale) : null);
         }
 
+        private static Node GetNode(MappedField field)
+        {
+            return GetColumn(field).CreateSchemaNode();
+        }
+
+        private static GroupNode GetGroupNode(string groupName, bool nullable, Node[] children)
+        {
+            return new GroupNode(groupName, nullable ? Repetition.Optional : Repetition.Required, children);
+        }
+
+        private static bool IsNested(Type type, out Type nestedType)
+        {
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nested<>))
+            {
+                nestedType = type.GetGenericArguments().Single();
+                return true;
+            }
+
+            nestedType = typeof(object);
+            return false;
+        }
+
+        private static bool IsNullable(Type type, out Type interiorType)
+        {
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                interiorType = type.GetGenericArguments().Single();
+                return true;
+            }
+
+            interiorType = typeof(object);
+            return false;
+        }
+
         private static readonly ConcurrentDictionary<Type, Delegate> ReadDelegatesCache =
             new ConcurrentDictionary<Type, Delegate>();
 
-        private static readonly ConcurrentDictionary<Type, (Column[] columns, Delegate writeDelegate)> WriteDelegates =
-            new ConcurrentDictionary<Type, (Column[] columns, Delegate writeDelegate)>();
+        private static readonly ConcurrentDictionary<Type, (GroupNode schema, Delegate writeDelegate)> WriteDelegates =
+            new ConcurrentDictionary<Type, (GroupNode schema, Delegate writeDelegate)>();
     }
 }

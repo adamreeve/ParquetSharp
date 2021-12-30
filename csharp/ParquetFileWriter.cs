@@ -124,6 +124,28 @@ namespace ParquetSharp
             Columns = null;
         }
 
+        public ParquetFileWriter(
+            string path,
+            GroupNode schema,
+            Compression compression = Compression.Snappy,
+            IReadOnlyDictionary<string, string>? keyValueMetadata = null)
+        {
+            using var writerProperties = CreateWriterProperties(compression);
+            _handle = CreateParquetFileWriter(path, schema, writerProperties, keyValueMetadata);
+            Columns = null;
+        }
+
+        public ParquetFileWriter(
+            OutputStream outputStream,
+            GroupNode schema,
+            Compression compression = Compression.Snappy,
+            IReadOnlyDictionary<string, string>? keyValueMetadata = null)
+        {
+            using var writerProperties = CreateWriterProperties(compression);
+            _handle = CreateParquetFileWriter(outputStream, schema, writerProperties, keyValueMetadata);
+            Columns = null;
+        }
+
         public void Dispose()
         {
             // Unfortunately we cannot call Close() here as it can throw exceptions.

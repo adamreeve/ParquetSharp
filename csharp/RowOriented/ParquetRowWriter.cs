@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using ParquetSharp.IO;
+using ParquetSharp.Schema;
 
 namespace ParquetSharp.RowOriented
 {
@@ -15,41 +16,41 @@ namespace ParquetSharp.RowOriented
 
         internal ParquetRowWriter(
             string path,
-            Column[] columns,
+            GroupNode schema,
             Compression compression,
             IReadOnlyDictionary<string, string>? keyValueMetadata,
             WriteAction writeAction)
-            : this(new ParquetFileWriter(path, columns, compression, keyValueMetadata), writeAction)
+            : this(new ParquetFileWriter(path, schema, compression, keyValueMetadata), writeAction)
         {
         }
 
         internal ParquetRowWriter(
             string path,
-            Column[] columns,
+            GroupNode schema,
             WriterProperties writerProperties,
             IReadOnlyDictionary<string, string>? keyValueMetadata,
             WriteAction writeAction)
-            : this(new ParquetFileWriter(path, columns, writerProperties, keyValueMetadata), writeAction)
+            : this(new ParquetFileWriter(path, schema, writerProperties, keyValueMetadata), writeAction)
         {
         }
 
         internal ParquetRowWriter(
             OutputStream outputStream,
-            Column[] columns,
+            GroupNode schema,
             Compression compression,
             IReadOnlyDictionary<string, string>? keyValueMetadata,
             WriteAction writeAction)
-            : this(new ParquetFileWriter(outputStream, columns, compression, keyValueMetadata), writeAction)
+            : this(new ParquetFileWriter(outputStream, schema, compression, keyValueMetadata), writeAction)
         {
         }
 
         internal ParquetRowWriter(
             OutputStream outputStream,
-            Column[] columns,
+            GroupNode schema,
             WriterProperties writerProperties,
             IReadOnlyDictionary<string, string>? keyValueMetadata,
             WriteAction writeAction)
-            : this(new ParquetFileWriter(outputStream, columns, writerProperties, keyValueMetadata), writeAction)
+            : this(new ParquetFileWriter(outputStream, schema, writerProperties, keyValueMetadata), writeAction)
         {
         }
 
