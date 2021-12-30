@@ -354,6 +354,50 @@ namespace ParquetSharp.Test
             Assert.IsNull(rows[3].S);
         }
 
+        [Test]
+        public static void TestDoublyNestedObjectRoundTrip()
+        {
+            using var buffer = new ResizableBuffer();
+
+            var rowsToWrite = new[]
+            {
+                new DoublyNestedRow {Nested0 = new RowWithNullableNesting {Nested = new NestedGroup {Q = 1, R = 2}, S = 3}, T = 4},
+                new DoublyNestedRow {Nested0 = new RowWithNullableNesting {Nested = null, S = 5}, T = 6},
+                new DoublyNestedRow {Nested0 = new RowWithNullableNesting {Nested = new NestedGroup {Q = 7, R = 8}, S = null}, T = null},
+                new DoublyNestedRow {Nested0 = null, T = 9},
+            };
+
+            using (var outputStream = new BufferOutputStream(buffer))
+            {
+                using var writer = ParquetFile.CreateRowWriter<DoublyNestedRow>(outputStream);
+
+                writer.WriteRows(rowsToWrite);
+                writer.Close();
+            }
+
+            using var inputStream = new BufferReader(buffer);
+            using var reader = ParquetFile.CreateRowReader<DoublyNestedRow>(inputStream);
+
+            var rows = reader.ReadRows(0);
+
+            Assert.AreEqual(rows[0].Nested0?.Nested?.Q, 1);
+            Assert.AreEqual(rows[0].Nested0?.Nested?.R, 2);
+            Assert.AreEqual(rows[0].Nested0?.S, 3);
+            Assert.AreEqual(rows[0].T, 4);
+
+            Assert.IsNull(rows[1].Nested0?.Nested);
+            Assert.AreEqual(rows[1].Nested0?.S, 5);
+            Assert.AreEqual(rows[1].T, 6);
+
+            Assert.AreEqual(rows[2].Nested0?.Nested?.Q, 1);
+            Assert.AreEqual(rows[2].Nested0?.Nested?.R, 2);
+            Assert.IsNull(rows[2].Nested0?.S);
+            Assert.IsNull(rows[2].T);
+
+            Assert.IsNull(rows[3].Nested0);
+            Assert.AreEqual(rows[3].T, 9);
+        }
+
         private struct NestedGroup
         {
             [MapToColumn("A")]
@@ -379,6 +423,15 @@ namespace ParquetSharp.Test
 
             [MapToColumn("C")]
             public int? S { get; set; }
+        }
+
+        private struct DoublyNestedRow
+        {
+            [MapToGroup("N0")]
+            public RowWithNullableNesting? Nested0 { get; set; }
+
+            [MapToColumnAttribute("D")]
+            public int? T { get; set; }
         }
 
 #if DUMP_EXPRESSION_TREES
