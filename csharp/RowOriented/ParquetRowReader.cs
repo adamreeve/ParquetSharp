@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Linq;
 using ParquetSharp.IO;
+using ParquetSharp.Schema;
 
 namespace ParquetSharp.RowOriented
 {
@@ -101,16 +102,36 @@ namespace ParquetSharp.RowOriented
                 var fileColumns = new Dictionary<string, int>();
                 var schemaDescriptor = parquetRowReader.FileMetaData.Schema;
 
-                for (var i = 0; i < schemaDescriptor.NumColumns; ++i)
+                var colIdx = 0;
+                foreach (var columnNode in LogicalColumnNodes(schemaDescriptor.GroupNode))
                 {
-                    fileColumns[schemaDescriptor.Column(i).Path.ToDotString()] = i;
+                    fileColumns[columnNode.Path.ToDotString()] = colIdx;
+                    ++colIdx;
                 }
 
-                int leafIndex = 0;
+                var leafIndex = 0;
                 foreach (var field in fields)
                 {
                     var mappedNode = field.MappedSchemaName ?? throw new InvalidOperationException("mapped column name is null");
                     SetColumnMapping(field, mappedNode, fileColumns, ref leafIndex);
+                }
+            }
+
+            private static IEnumerable<Node> LogicalColumnNodes(GroupNode schemaNode)
+            {
+                foreach (var child in schemaNode.Fields)
+                {
+                    if (child is GroupNode {LogicalType: NoneLogicalType} groupNode)
+                    {
+                        foreach (var node in LogicalColumnNodes(groupNode))
+                        {
+                            yield return node;
+                        }
+                    }
+                    else
+                    {
+                        yield return child;
+                    }
                 }
             }
 

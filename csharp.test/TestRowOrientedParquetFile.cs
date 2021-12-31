@@ -446,6 +446,49 @@ namespace ParquetSharp.Test
             Assert.AreEqual(9, rows[3].T);
         }
 
+        [Test]
+        public static void TestNestedArrayRoundTrip()
+        {
+            using var buffer = new ResizableBuffer();
+
+            var rowsToWrite = new[]
+            {
+                new RowWithNestedArray {Nested = new NestedArrayGroup {Q = new[] {1, 2}, R = 2}, S = 3},
+                new RowWithNestedArray {Nested = new NestedArrayGroup {Q = new[] {4}, R = null}, S = 5},
+                new RowWithNestedArray {Nested = new NestedArrayGroup {Q = Array.Empty<int>(), R = 7}, S = 8},
+                new RowWithNestedArray {Nested = new NestedArrayGroup {Q = null, R = 7}, S = 8},
+            };
+
+            using (var outputStream = new BufferOutputStream(buffer))
+            {
+                using var writer = ParquetFile.CreateRowWriter<RowWithNestedArray>(outputStream);
+
+                writer.WriteRows(rowsToWrite);
+                writer.Close();
+            }
+
+            using var inputStream = new BufferReader(buffer);
+            using var reader = ParquetFile.CreateRowReader<RowWithNestedArray>(inputStream);
+
+            var rows = reader.ReadRows(0);
+
+            Assert.AreEqual(rows[0].Nested.Q, new[] {1, 2});
+            Assert.AreEqual(rows[0].Nested.R!, 2);
+            Assert.AreEqual(rows[0].S, 3);
+
+            Assert.AreEqual(rows[1].Nested.Q, new[] {4});
+            Assert.IsNull(rows[1].Nested.R);
+            Assert.AreEqual(rows[1].S, 5);
+
+            Assert.AreEqual(rows[2].Nested.Q, Array.Empty<int>());
+            Assert.AreEqual(rows[2].Nested.R!, 7);
+            Assert.AreEqual(rows[2].S, 8);
+
+            Assert.IsNull(rows[3].Nested.Q);
+            Assert.AreEqual(rows[3].Nested.R!, 7);
+            Assert.AreEqual(rows[3].S, 8);
+        }
+
         private struct NestedGroup
         {
             [MapToColumn("A")]
@@ -455,10 +498,28 @@ namespace ParquetSharp.Test
             public int? R { get; set; }
         }
 
+        private struct NestedArrayGroup
+        {
+            [MapToColumn("A")]
+            public int[]? Q { get; set; }
+
+            [MapToColumn("B")]
+            public int? R { get; set; }
+        }
+
         private struct RowWithNesting
         {
             [MapToGroup("N")]
             public NestedGroup Nested { get; set; }
+
+            [MapToColumn("C")]
+            public int S { get; set; }
+        }
+
+        private struct RowWithNestedArray
+        {
+            [MapToGroup("N")]
+            public NestedArrayGroup Nested { get; set; }
 
             [MapToColumn("C")]
             public int S { get; set; }
