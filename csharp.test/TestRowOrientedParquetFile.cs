@@ -364,7 +364,6 @@ namespace ParquetSharp.Test
                 new DoublyNestedRow {Nested0 = new RowWithNullableNesting {Nested = new NestedGroup {Q = 1, R = 2}, S = 3}, T = 4},
                 new DoublyNestedRow {Nested0 = new RowWithNullableNesting {Nested = null, S = 5}, T = 6},
                 new DoublyNestedRow {Nested0 = new RowWithNullableNesting {Nested = new NestedGroup {Q = 7, R = 8}, S = null}, T = null},
-                new DoublyNestedRow {Nested0 = null, T = 9},
             };
 
             using (var outputStream = new BufferOutputStream(buffer))
@@ -380,22 +379,63 @@ namespace ParquetSharp.Test
 
             var rows = reader.ReadRows(0);
 
-            Assert.AreEqual(rows[0].Nested0?.Nested?.Q, 1);
-            Assert.AreEqual(rows[0].Nested0?.Nested?.R, 2);
-            Assert.AreEqual(rows[0].Nested0?.S, 3);
-            Assert.AreEqual(rows[0].T, 4);
+            Assert.AreEqual(1, rows[0].Nested0.Nested?.Q);
+            Assert.AreEqual(2, rows[0].Nested0.Nested?.R);
+            Assert.AreEqual(3, rows[0].Nested0.S);
+            Assert.AreEqual(4, rows[0].T);
+
+            Assert.IsNull(rows[1].Nested0.Nested);
+            Assert.AreEqual(5, rows[1].Nested0.S);
+            Assert.AreEqual(6, rows[1].T);
+
+            Assert.AreEqual(7, rows[2].Nested0.Nested?.Q);
+            Assert.AreEqual(8, rows[2].Nested0.Nested?.R);
+            Assert.IsNull(rows[2].Nested0.S);
+            Assert.IsNull(rows[2].T);
+        }
+
+        [Test]
+        public static void TestNullableDoublyNestedObjectRoundTrip()
+        {
+            using var buffer = new ResizableBuffer();
+
+            var rowsToWrite = new[]
+            {
+                new DoublyNestedNullableRow {Nested0 = new RowWithNullableNesting {Nested = new NestedGroup {Q = 1, R = 2}, S = 3}, T = 4},
+                new DoublyNestedNullableRow {Nested0 = new RowWithNullableNesting {Nested = null, S = 5}, T = 6},
+                new DoublyNestedNullableRow {Nested0 = new RowWithNullableNesting {Nested = new NestedGroup {Q = 7, R = 8}, S = null}, T = null},
+                new DoublyNestedNullableRow {Nested0 = null, T = 9},
+            };
+
+            using (var outputStream = new BufferOutputStream(buffer))
+            {
+                using var writer = ParquetFile.CreateRowWriter<DoublyNestedNullableRow>(outputStream);
+
+                writer.WriteRows(rowsToWrite);
+                writer.Close();
+            }
+
+            using var inputStream = new BufferReader(buffer);
+            using var reader = ParquetFile.CreateRowReader<DoublyNestedNullableRow>(inputStream);
+
+            var rows = reader.ReadRows(0);
+
+            Assert.AreEqual(1, rows[0].Nested0?.Nested?.Q);
+            Assert.AreEqual(2, rows[0].Nested0?.Nested?.R);
+            Assert.AreEqual(3, rows[0].Nested0?.S);
+            Assert.AreEqual(4, rows[0].T);
 
             Assert.IsNull(rows[1].Nested0?.Nested);
-            Assert.AreEqual(rows[1].Nested0?.S, 5);
-            Assert.AreEqual(rows[1].T, 6);
+            Assert.AreEqual(5, rows[1].Nested0?.S);
+            Assert.AreEqual(6, rows[1].T);
 
-            Assert.AreEqual(rows[2].Nested0?.Nested?.Q, 1);
-            Assert.AreEqual(rows[2].Nested0?.Nested?.R, 2);
+            Assert.AreEqual(7, rows[2].Nested0?.Nested?.Q);
+            Assert.AreEqual(8, rows[2].Nested0?.Nested?.R);
             Assert.IsNull(rows[2].Nested0?.S);
             Assert.IsNull(rows[2].T);
 
             Assert.IsNull(rows[3].Nested0);
-            Assert.AreEqual(rows[3].T, 9);
+            Assert.AreEqual(9, rows[3].T);
         }
 
         private struct NestedGroup
@@ -426,6 +466,15 @@ namespace ParquetSharp.Test
         }
 
         private struct DoublyNestedRow
+        {
+            [MapToGroup("N0")]
+            public RowWithNullableNesting Nested0 { get; set; }
+
+            [MapToColumnAttribute("D")]
+            public int? T { get; set; }
+        }
+
+        private struct DoublyNestedNullableRow
         {
             [MapToGroup("N0")]
             public RowWithNullableNesting? Nested0 { get; set; }

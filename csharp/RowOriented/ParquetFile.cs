@@ -199,50 +199,118 @@ namespace ParquetSharp.RowOriented
         {
             var children = field.GetChildren();
             var fieldType = field.Type;
-            var nullable = false;
             if (IsNullable(fieldType, out var interiorType))
             {
                 fieldType = interiorType;
-                nullable = true;
             }
 
             var fieldCtor = fieldType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, children.Select(f => f.Type).ToArray(), null);
+            // Expression to construct a struct value, assuming it is non-null
             var constructionExpression =
                 fieldCtor == null
                     ? (Expression) Expression.MemberInit(Expression.New(fieldType),
                         children.Select(f => Expression.Bind(f.Info,
-                            GetValueExpression(Expression.ArrayAccess(buffers[f], loopIndex), f))))
+                            GetNestedValueExpression(Expression.ArrayAccess(buffers[f], loopIndex), f))))
                     : Expression.New(fieldCtor,
-                        children.Select(f => GetValueExpression(Expression.ArrayAccess(buffers[f], loopIndex), f)));
+                        children.Select(f => GetNestedValueExpression(Expression.ArrayAccess(buffers[f], loopIndex), f)));
 
-            if (nullable)
+            var childField = children.First();
+            Expression childAccess = Expression.ArrayAccess(buffers[childField], loopIndex);
+
+            // Handle when the field value is null
+            if (IsNullable(field.Type, out _))
             {
-                // For nullable fields, we need to check that nested children are non-null before assigning
-                var firstChild = children.First();
-                var valueCheck = Expression.MakeMemberAccess(
-                    Expression.ArrayAccess(buffers[firstChild], loopIndex), firstChild.LogicalType.GetProperty("HasValue")!);
-                // Construct a nullable value rather than the plain field type
-                var nullableConstructor = field.Type.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {fieldType}, null);
-                var makeNullableExpression = Expression.New(nullableConstructor!, constructionExpression);
+                var fieldAccess = GetNestedValueExpression(childAccess, field);
+                var valueCheck = Expression.MakeMemberAccess(fieldAccess, fieldAccess.Type.GetProperty("HasValue")!);
+                var nullableConstructor = field.Type.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {interiorType}, null);
+                var makeNonNull = Expression.New(nullableConstructor!, constructionExpression);
+                var makeNull = Expression.Constant(null, field.Type);
+                constructionExpression = Expression.Condition(valueCheck, makeNonNull, makeNull);
+            }
 
-                constructionExpression =
-                    Expression.Condition(valueCheck, makeNullableExpression, Expression.Constant(null, field.Type));
+            // Apply nesting for any parent types, also adding additional null checks required for nullable parents
+            var parent = field.Parent;
+            var parentType = field.Type;
+            while (parent != null)
+            {
+                var nestedType = parentType;
+                parentType = typeof(Nested<>).MakeGenericType(parentType);
+                var nestedCtor = parentType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {nestedType}, null);
+                constructionExpression = Expression.New(nestedCtor!, constructionExpression);
+
+                if (IsNullable(parent.Type, out _))
+                {
+                    var parentInteriorType = parentType;
+                    parentType = typeof(Nullable<>).MakeGenericType(parentType);
+
+                    var parentAccess = GetNestedValueExpression(childAccess, parent);
+                    var valueCheck = Expression.MakeMemberAccess(parentAccess, parentAccess.Type.GetProperty("HasValue")!);
+                    var nullableConstructor = parentType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {parentInteriorType}, null);
+                    var makeNonNull = Expression.New(nullableConstructor!, constructionExpression);
+                    var makeNull = Expression.Constant(null, parentType);
+                    constructionExpression =
+                        Expression.Condition(valueCheck, makeNonNull, makeNull);
+                }
+                parent = parent.Parent;
             }
 
             return constructionExpression;
         }
 
+        private static Expression NestValue(Expression expression, MappedField field)
+        {
+            var parentField = field.Parent;
+            while (parentField != null)
+            {
+                var nestedType = typeof(Nested<>).MakeGenericType(expression.Type);
+                var nestedCtor = nestedType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {expression.Type}, null);
+                expression = Expression.New(nestedCtor!, expression);
+                if (IsNullable(parentField.Type, out _))
+                {
+                    var nullableType = typeof(Nullable<>).MakeGenericType(expression.Type);
+                    var nullableCtor = nullableType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {expression.Type}, null);
+                    expression = Expression.New(nullableCtor!, expression);
+                }
+                parentField = parentField.Parent;
+            }
+
+            return expression;
+        }
+
         /// <summary>
         /// Return an expression for getting the leaf value from a column with a potentially nested type
         /// </summary>
-        /// <param name="logicalValueExpression">Expression that provides an instance of the field's logical type</param>
+        /// <param name="valueExpression">Expression that provides an instance of the field's logical type</param>
         /// <param name="field">The mapped field for the column</param>
-        private static Expression GetValueExpression(Expression logicalValueExpression, MappedField field)
+        private static Expression GetNestedValueExpression(Expression valueExpression, MappedField field)
         {
-            var valueExpression = logicalValueExpression;
-            foreach (var member in field.GetValueMemberChain())
+            var nestingDepth = 0;
+            while (field.Parent != null)
             {
-                valueExpression = Expression.MakeMemberAccess(valueExpression, member);
+                ++nestingDepth;
+                field = field.Parent;
+            }
+
+            var type = valueExpression.Type;
+            for (int depth = 0; depth < nestingDepth; ++depth)
+            {
+                if (IsNullable(type, out var innerType))
+                {
+                    var nullableMember = type.GetProperty("Value");
+                    valueExpression = Expression.MakeMemberAccess(valueExpression, nullableMember!);
+                    type = innerType;
+                }
+
+                if (IsNested(type, out var nestedType))
+                {
+                    var nestedMember = type.GetField("Value");
+                    valueExpression = Expression.MakeMemberAccess(valueExpression, nestedMember!);
+                    type = nestedType;
+                }
+                else
+                {
+                    throw new ArgumentException("Expected a nested type");
+                }
             }
 
             return valueExpression;
@@ -344,12 +412,11 @@ namespace ParquetSharp.RowOriented
                         // Add check for a value, and in the true case, recurse back in but set the
                         // checked depth so that we don't enter this branch again and assume we have a non-null value.
                         var nestedValue = GetNestedValue(rootObjectInstance, leafField, depth);
+                        var nullValue = NestValue(Expression.Constant(null, UnwrapNesting(nestedValue.Type, depth)), parent);
                         return Expression.Condition(
                             Expression.PropertyOrField(leafExpression, "HasValue"),
                             nestedValue,
-                            // TODO: For multiple nested levels, this won't always be null,
-                            // but might be non-null at an intermediate level
-                            Expression.Constant(null, nestedValue.Type)
+                            nullValue
                         );
                     }
                     else
@@ -363,20 +430,7 @@ namespace ParquetSharp.RowOriented
             leafExpression = Expression.PropertyOrField(leafExpression, leafField.Name);
 
             // Then go back up the hierarchy, nesting the value to return
-            field = leafField;
-            while (field.Parent != null)
-            {
-                var nestedType = typeof(Nested<>).MakeGenericType(leafExpression.Type);
-                var nestedCtor = nestedType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {leafExpression.Type}, null);
-                leafExpression = Expression.New(nestedCtor!, leafExpression);
-                if (IsNullable(field.Parent.Type, out _))
-                {
-                    var nullableType = typeof(Nullable<>).MakeGenericType(leafExpression.Type);
-                    var nullableCtor = nullableType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, null, new[] {leafExpression.Type}, null);
-                    leafExpression = Expression.New(nullableCtor!, leafExpression);
-                }
-                field = field.Parent;
-            }
+            leafExpression = NestValue(leafExpression, leafField);
 
             return leafExpression;
         }
@@ -522,6 +576,40 @@ namespace ParquetSharp.RowOriented
 
             interiorType = typeof(object);
             return false;
+        }
+
+        private static bool IsNested(Type type, out Type nestedType)
+        {
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nested<>))
+            {
+                nestedType = type.GetGenericArguments().Single();
+                return true;
+            }
+
+            nestedType = typeof(object);
+            return false;
+        }
+
+        private static Type UnwrapNesting(Type type, int depth)
+        {
+            for (var level = 0; level < depth; ++level)
+            {
+                if (IsNullable(type, out var interiorType))
+                {
+                    type = interiorType;
+                }
+
+                if (IsNested(type, out var nestedType))
+                {
+                    type = nestedType;
+                }
+                else
+                {
+                    throw new ArgumentException("Expected a nested type");
+                }
+
+            }
+            return type;
         }
 
         private static readonly ConcurrentDictionary<Type, Delegate> ReadDelegatesCache =

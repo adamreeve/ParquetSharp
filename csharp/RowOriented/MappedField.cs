@@ -30,37 +30,6 @@ namespace ParquetSharp.RowOriented
         public MappedField[] GetChildren() => Children ?? Array.Empty<MappedField>();
 
         /// <summary>
-        /// Get an array of members that must be accessed from an instance of the logical type to reach the non-nested value
-        /// </summary>
-        public MemberInfo[] GetValueMemberChain()
-        {
-            var members = new List<MemberInfo>();
-            var type = LogicalType;
-            while (true)
-            {
-                var levelMembers = new List<MemberInfo>();
-                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
-                {
-                    levelMembers.Add(type.GetProperty("Value"));
-                    type = type.GenericTypeArguments.Single();
-                }
-
-                if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nested<>))
-                {
-                    levelMembers.Add(type.GetField("Value"));
-                    type = type.GenericTypeArguments.Single();
-                }
-                else
-                {
-                    break;
-                }
-
-                members.AddRange(levelMembers);
-            }
-            return members.ToArray();
-        }
-
-        /// <summary>
         /// Apply any nesting to get the final logical type of the leaf column
         /// </summary>
         private static Type GetLogicalType(Type type, MappedField? parent)
