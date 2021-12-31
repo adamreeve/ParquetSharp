@@ -193,6 +193,14 @@ namespace ParquetSharp.Test
             using var inputStream = new BufferReader(buffer);
             using var reader = ParquetFile.CreateRowReader<TTupleRead>(inputStream);
 
+            if (columnNames != null)
+            {
+                for (var colIdx = 0; colIdx < columnNames.Length; ++colIdx)
+                {
+                    Assert.AreEqual(columnNames[colIdx], reader.FileMetaData.Schema.Column(colIdx).Name);
+                }
+            }
+
             var values = reader.ReadRows(rowGroup: 0);
             Assert.AreEqual(expectedRows, values);
         }

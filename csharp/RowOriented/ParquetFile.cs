@@ -108,16 +108,52 @@ namespace ParquetSharp.RowOriented
             var (schema, writeDelegate) = WriteDelegates.GetOrAdd(typeof(TTuple), k => CreateWriteDelegate<TTuple>());
             if (columnNames != null)
             {
-                // TODO: Fix this, maybe only allow column names for non-nested? Also, add a test to exercise this!
-                //if (columnNames.Length != columns.Length)
-                //{
-                //    throw new ArgumentException("the length of column names does not mach the number of public fields and properties", nameof(columnNames));
-                //}
-
-                //columns = columns.Select((c, i) => new Column(c.LogicalSystemType, columnNames[i], c.LogicalTypeOverride, c.Length)).ToArray();
+                schema = SetColumnNames(schema, columnNames);
             }
 
             return (schema, (ParquetRowWriter<TTuple>.WriteAction) writeDelegate);
+        }
+
+        private static GroupNode SetColumnNames(GroupNode schema, string[] columnNames)
+        {
+            if (columnNames.Length != schema.Fields.Length)
+            {
+                throw new ArgumentException(
+                    $"Number of column names ({columnNames.Length}) does not match number of schema fields ({schema.Fields.Length})");
+            }
+
+            var childNodes = new List<Node>();
+            for (var colIdx = 0; colIdx < columnNames.Length; ++colIdx)
+            {
+                var child = schema.Fields[colIdx];
+                switch (child)
+                {
+                    case GroupNode groupNode:
+                    {
+                        childNodes.Add(new GroupNode(
+                            columnNames[colIdx],
+                            groupNode.Repetition,
+                            groupNode.Fields.Select(f => f.DeepClone()).ToArray(),
+                            groupNode.LogicalType is NoneLogicalType ? null : groupNode.LogicalType));
+                        break;
+                    }
+                    case PrimitiveNode primitiveNode:
+                    {
+                        childNodes.Add(new PrimitiveNode(
+                            columnNames[colIdx],
+                            primitiveNode.Repetition,
+                            primitiveNode.LogicalType,
+                            primitiveNode.PhysicalType,
+                            primitiveNode.TypeLength));
+                        break;
+                    }
+                    default:
+                    {
+                        throw new ArgumentException($"Unsupported node type {child.GetType()}");
+                    }
+                }
+            }
+            return new GroupNode("schema", Repetition.Required, childNodes.ToArray());
         }
 
         private static IEnumerable<(string VarSuffix, MappedField Field, bool IsLeaf)> DepthFirstFields(MappedField[] fields, string parentVarSuffix = "")
