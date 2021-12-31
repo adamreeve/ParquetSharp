@@ -21,9 +21,13 @@ namespace ParquetSharp.Test
             using var fileReader = new ParquetFileReader(path);
             var rowGroupReader = fileReader.RowGroup(0);
 
-            var col0Actual = rowGroupReader.Column(0).LogicalReader<string[]>().ReadAll(2);
-            var col1Actual = rowGroupReader.Column(1).LogicalReader<string[]>().ReadAll(2);
-            var col2Actual = rowGroupReader.Column(2).LogicalReader<string>().ReadAll(2);
+            using var col0Reader = rowGroupReader.Column(0).LogicalReader<string[]>();
+            using var col1Reader = rowGroupReader.Column(1).LogicalReader<string[]>();
+            using var col2Reader = rowGroupReader.Column(2).LogicalReader<string>();
+
+            var col0Actual = col0Reader.ReadAll(2);
+            var col1Actual = col1Reader.ReadAll(2);
+            var col2Actual = col2Reader.ReadAll(2);
         }
 
         [Test]
@@ -59,11 +63,10 @@ namespace ParquetSharp.Test
                 using var rowGroupWriter = fileWriter.AppendRowGroup();
                 using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
 
-                var keysExpected = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, null, new string[0] };
-                var valuesExpected = new[] { new[] { "v1", "v2" }, new[] { "v3", "v4" }, null, new string[0] };
+                var keys = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, null, new string[0] };
 
                 // Writing a column containing a null should throw an exception because the schema says values are required
-                var exception = Assert.Throws<InvalidOperationException>(() => colWriterKeys.WriteBatch(keysExpected!))!;
+                var exception = Assert.Throws<InvalidOperationException>(() => colWriterKeys.WriteBatch(keys!))!;
                 Assert.AreEqual("Cannot write a null array value for a required array column", exception.Message);
 
                 // We will also get an exception because we haven't written any data
@@ -102,8 +105,10 @@ namespace ParquetSharp.Test
                 using var fileReader = new ParquetFileReader(inStream);
                 using var rowGroup = fileReader.RowGroup(0);
 
-                var keysActual = rowGroup.Column(0).LogicalReader<string[]>().ReadAll(keys.Length);
-                var valuesActual = rowGroup.Column(1).LogicalReader<string[]>().ReadAll(values.Length);
+                using var keysColReader = rowGroup.Column(0).LogicalReader<string[]>();
+                var keysActual = keysColReader.ReadAll(values.Length);
+                using var valuesColReader = rowGroup.Column(1).LogicalReader<string[]>();
+                var valuesActual = valuesColReader.ReadAll(values.Length);
 
                 Assert.AreEqual(keys, keysActual);
                 Assert.AreEqual(values, valuesActual);
