@@ -63,7 +63,7 @@ namespace ParquetSharp.Test
                 using var rowGroupWriter = fileWriter.AppendRowGroup();
                 using var colWriterKeys = rowGroupWriter.NextColumn().LogicalWriter<string[]>();
 
-                var keys = new[] { new[] { "k1", "k2" }, new[] { "k3", "k4" }, null, new string[0] };
+                var keys = new[] {new[] {"k1", "k2"}, new[] {"k3", "k4"}, null, new string[0]};
 
                 // Writing a column containing a null should throw an exception because the schema says values are required
                 var exception = Assert.Throws<InvalidOperationException>(() => colWriterKeys.WriteBatch(keys!))!;

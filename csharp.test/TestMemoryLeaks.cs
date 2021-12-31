@@ -104,7 +104,7 @@ namespace ParquetSharp.Test
 
             using var rowGroupReader = fileReader.RowGroup(0);
 
-            var numRows = checked((int)rowGroupReader.MetaData.NumRows);
+            var numRows = checked((int) rowGroupReader.MetaData.NumRows);
 
             using var dateTimeReader = rowGroupReader.Column(0).LogicalReader<DateTime>();
             using var objectIdReader = rowGroupReader.Column(1).LogicalReader<int>();
