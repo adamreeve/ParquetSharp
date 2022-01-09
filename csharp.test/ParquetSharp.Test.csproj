@@ -25,13 +25,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="TestFiles\nested.parquet">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="TestFiles\map.parquet">
+    <None Update="TestFiles\*.parquet">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
 
 </Project>

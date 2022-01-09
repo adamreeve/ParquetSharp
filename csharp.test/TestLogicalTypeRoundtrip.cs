@@ -507,34 +507,81 @@ namespace ParquetSharp.Test
             fileWriter.Close();
         }
 
-        private static GroupNode CreateRequiredArraySchemaNode()
+        /// <summary>
+        /// A defined levels stream isn't required for a nested int,
+        /// so check we can handle that.
+        /// </summary>
+        [Test]
+        public static void TestRequiredNestedRoundtripInt()
         {
-            return new GroupNode(
-                "schema",
-                Repetition.Required,
-                new Node[]
+            var values = Enumerable.Range(0, 100).Select(i => new Nested<int>(i)).ToArray();
+            CheckNestedRoundtrip(values, new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32));
+        }
+
+        /// <summary>
+        /// If we're testing TestRequiredNestedRoundtripInt then it's worth testing
+        /// the same thing for a string. And whoops that doesn't work.
+        /// </summary>
+        [Test]
+        [Explicit]
+        public static void TestRequiredNestedRoundtripString()
+        {
+            var values = Enumerable.Range(0, 100).Select(i => new Nested<string>($"row {i}")).ToArray();
+            CheckNestedRoundtrip(values, new PrimitiveNode("element", Repetition.Required, LogicalType.String(), PhysicalType.ByteArray));
+        }
+
+        /// <summary>
+        /// The last one didn't work. Can we even round trip a required string? No we can't.
+        /// </summary>
+        [Test]
+        [Explicit]
+        public static void TestRequiredString()
+        {
+            var values = Enumerable.Range(0, 100).Select(i => $"row {i}").ToArray();
+            CheckRoundtrip(values, new PrimitiveNode("item", Repetition.Required, LogicalType.String(), PhysicalType.ByteArray));
+        }
+
+        /// <summary>
+        /// https://github.com/G-Research/ParquetSharp/issues/242
+        /// TODO: Make this test work so we can re-enable it
+        /// </summary>
+        [Test]
+        [Explicit]
+        public static void TestLargeArraysEnumerator()
+        {
+            var numRows = 4100;
+
+            using var buffer = new ResizableBuffer();
+
+            using (var output = new BufferOutputStream(buffer))
+            {
+                var columns = new Column[] {new Column<string[]>("col0")};
+
+                using var fileWriter = new ParquetFileWriter(output, columns);
+                using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
+
+                using var col = rowGroupWriter.Column(0).LogicalWriter<string[]>();
+                col.WriteBatch(Enumerable.Range(0, numRows).Select(i => new[] {$"row {i}"}).ToArray());
+
+                fileWriter.Close();
+            }
+
+            using (var input = new BufferReader(buffer))
+            {
+                using var fileReader = new ParquetFileReader(input);
+                using var rowGroupReader = fileReader.RowGroup(0);
+
+                using var col = rowGroupReader.Column(0).LogicalReader<string[]>();
+
+                var enumerator = col.GetEnumerator();
+                for (var i = 0; i < numRows; i++)
                 {
-                    // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
-                    // The outer-most level must be a group annotated with LIST that contains a single field named list.
-                    // The repetition of this level must be either optional or required and determines whether the list is nullable.
-                    new GroupNode(
-                        "required_array",
-                        Repetition.Required,
-                        new Node[]
-                        {
-                            new GroupNode(
-                                "list",
-                                Repetition.Repeated,
-                                new Node[]
-                                {
-                                    new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32)
-                                }
-                            )
-                        },
-                        LogicalType.List()
-                    )
+                    Assert.AreEqual(i < numRows - 1, enumerator.MoveNext(), $"i = {i}");
+                    Assert.AreEqual(new[] {$"row {i}"}, enumerator.Current);
                 }
-            );
+
+                fileReader.Close();
+            }
         }
 
         [Test]
@@ -651,6 +698,74 @@ namespace ParquetSharp.Test
             Assert.AreEqual(4, rowGroup.MetaData.NumRows);
             var allData = columnReader.ReadAll(4);
             Assert.AreEqual(expected, allData);
+        }
+
+        private static GroupNode CreateRequiredArraySchemaNode()
+        {
+            return new GroupNode(
+                "schema",
+                Repetition.Required,
+                new Node[]
+                {
+                    // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
+                    // The outer-most level must be a group annotated with LIST that contains a single field named list.
+                    // The repetition of this level must be either optional or required and determines whether the list is nullable.
+                    new GroupNode(
+                        "required_array",
+                        Repetition.Required,
+                        new Node[]
+                        {
+                            new GroupNode(
+                                "list",
+                                Repetition.Repeated,
+                                new Node[]
+                                {
+                                    new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32)
+                                }
+                            )
+                        },
+                        LogicalType.List()
+                    )
+                }
+            );
+        }
+
+        private static void CheckNestedRoundtrip<T>(Nested<T>[] values, PrimitiveNode elementNode)
+        {
+            CheckRoundtrip(values, new GroupNode("struct", Repetition.Required, new[] {elementNode}));
+        }
+
+        private static void CheckRoundtrip<T>(T[] values, Node node)
+        {
+            using var buffer = new ResizableBuffer();
+
+            using (var output = new BufferOutputStream(buffer))
+            {
+                var schemaNode = new GroupNode("schema", Repetition.Required, new[] {node});
+
+                using var fileWriter = new ParquetFileWriter(output, schemaNode, WriterProperties.GetDefaultWriterProperties());
+                using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
+                using var colWriter = rowGroupWriter.Column(0).LogicalWriter<T>();
+
+                colWriter.WriteBatch(values);
+
+                fileWriter.Close();
+            }
+
+            using var input = new BufferReader(buffer);
+            using var fileReader = new ParquetFileReader(input);
+            using var rowGroupReader = fileReader.RowGroup(0);
+            using var colReader = rowGroupReader.Column(0).LogicalReader<T>();
+
+            var actual = colReader.ReadAll((int) rowGroupReader.MetaData.NumRows);
+            Assert.IsNotEmpty(actual);
+            Assert.AreEqual(values.Length, actual.Length);
+            for (int i = 0; i < values.Length; i++)
+            {
+                Assert.AreEqual(values[i], actual[i]);
+            }
+
+            fileReader.Close();
         }
 
         private static ExpectedColumn[] CreateExpectedColumns()
