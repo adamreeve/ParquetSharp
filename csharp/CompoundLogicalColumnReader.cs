@@ -270,7 +270,7 @@ namespace ParquetSharp
 
         private Func<Array> MakeLeafReaderSingle(bool optional, short repetitionLevel, short nullDefinitionLevel)
         {
-            var definedLevel = (short) (nullDefinitionLevel + 1);
+            var definedLevel = (short) (nullDefinitionLevel + (optional ? 1 : 0));
 
             return () =>
             {

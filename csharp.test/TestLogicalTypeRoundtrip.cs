@@ -518,27 +518,18 @@ namespace ParquetSharp.Test
             CheckNestedRoundtrip(values, new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32));
         }
 
-        /// <summary>
-        /// If we're testing TestRequiredNestedRoundtripInt then it's worth testing
-        /// the same thing for a string. And whoops that doesn't work.
-        /// </summary>
         [Test]
-        [Explicit]
         public static void TestRequiredNestedRoundtripString()
         {
             var values = Enumerable.Range(0, 100).Select(i => new Nested<string>($"row {i}")).ToArray();
             CheckNestedRoundtrip(values, new PrimitiveNode("element", Repetition.Required, LogicalType.String(), PhysicalType.ByteArray));
         }
 
-        /// <summary>
-        /// The last one didn't work. Can we even round trip a required string? No we can't.
-        /// </summary>
         [Test]
-        [Explicit]
         public static void TestRequiredString()
         {
             var values = Enumerable.Range(0, 100).Select(i => $"row {i}").ToArray();
-            CheckRoundtrip(values, new PrimitiveNode("item", Repetition.Required, LogicalType.String(), PhysicalType.ByteArray));
+            CheckRoundtrip(values, new PrimitiveNode("item", Repetition.Required, LogicalType.String(), PhysicalType.ByteArray), (x, y) => x == y);
         }
 
         /// <summary>
@@ -732,10 +723,19 @@ namespace ParquetSharp.Test
 
         private static void CheckNestedRoundtrip<T>(Nested<T>[] values, PrimitiveNode elementNode)
         {
-            CheckRoundtrip(values, new GroupNode("struct", Repetition.Required, new[] {elementNode}));
+            bool AreEqual(Nested<T> x, Nested<T> y)
+            {
+                if (x.Value == null && y.Value == null)
+                {
+                    return true;
+                }
+                return x.Value!.Equals(y.Value);
+            }
+
+            CheckRoundtrip(values, new GroupNode("struct", Repetition.Required, new[] {elementNode}), AreEqual);
         }
 
-        private static void CheckRoundtrip<T>(T[] values, Node node)
+        private static void CheckRoundtrip<T>(T[] values, Node node, Func<T, T, bool> areEqual)
         {
             using var buffer = new ResizableBuffer();
 
@@ -762,7 +762,7 @@ namespace ParquetSharp.Test
             Assert.AreEqual(values.Length, actual.Length);
             for (int i = 0; i < values.Length; i++)
             {
-                Assert.AreEqual(values[i], actual[i]);
+                Assert.IsTrue(areEqual(values[i], actual[i]));
             }
 
             fileReader.Close();
