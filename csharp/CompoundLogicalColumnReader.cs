@@ -34,6 +34,8 @@ namespace ParquetSharp
             return result.Length;
         }
 
+        public override bool HasNext => !_bufferedReader.IsEofDefinition;
+
         private Func<int, Array> MakeReader(Node[] schemaNodes, Type elementType, int repetitionLevel, int nullDefinitionLevel, bool wantSingleItem)
         {
             if (IsNullable(elementType, out var innerNullable) && IsNested(innerNullable, out var innerNested))

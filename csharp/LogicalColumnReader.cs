@@ -43,7 +43,7 @@ namespace ParquetSharp
             }
         }
 
-        public bool HasNext => Source.HasNext;
+        public abstract bool HasNext { get; }
 
         public abstract TReturn Apply<TReturn>(ILogicalColumnReaderVisitor<TReturn> visitor);
 

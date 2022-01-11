@@ -532,27 +532,26 @@ namespace ParquetSharp.Test
             CheckRoundtrip(values, new PrimitiveNode("item", Repetition.Required, LogicalType.String(), PhysicalType.ByteArray), (x, y) => x == y);
         }
 
-        /// <summary>
-        /// https://github.com/G-Research/ParquetSharp/issues/242
-        /// TODO: Make this test work so we can re-enable it
-        /// </summary>
         [Test]
-        [Explicit]
         public static void TestLargeArraysEnumerator()
         {
-            var numRows = 4100;
+            CheckEnumerator(Enumerable.Range(0, 4100).ToArray());
+            CheckEnumerator(Enumerable.Range(0, 4100).Select(i => new[] {$"row {i}"}).ToArray());
+        }
 
+        private static void CheckEnumerator<T>(T[] values)
+        {
             using var buffer = new ResizableBuffer();
 
             using (var output = new BufferOutputStream(buffer))
             {
-                var columns = new Column[] {new Column<string[]>("col0")};
+                var columns = new Column[] {new Column<T>("col0")};
 
                 using var fileWriter = new ParquetFileWriter(output, columns);
                 using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
 
-                using var col = rowGroupWriter.Column(0).LogicalWriter<string[]>();
-                col.WriteBatch(Enumerable.Range(0, numRows).Select(i => new[] {$"row {i}"}).ToArray());
+                using var col = rowGroupWriter.Column(0).LogicalWriter<T>();
+                col.WriteBatch(values);
 
                 fileWriter.Close();
             }
@@ -562,14 +561,15 @@ namespace ParquetSharp.Test
                 using var fileReader = new ParquetFileReader(input);
                 using var rowGroupReader = fileReader.RowGroup(0);
 
-                using var col = rowGroupReader.Column(0).LogicalReader<string[]>();
+                using var col = rowGroupReader.Column(0).LogicalReader<T>();
 
                 var enumerator = col.GetEnumerator();
-                for (var i = 0; i < numRows; i++)
+                for (var i = 0; i < values.Length; i++)
                 {
-                    Assert.AreEqual(i < numRows - 1, enumerator.MoveNext(), $"i = {i}");
-                    Assert.AreEqual(new[] {$"row {i}"}, enumerator.Current);
+                    Assert.IsTrue(enumerator.MoveNext());
+                    Assert.AreEqual(values[i], enumerator.Current);
                 }
+                Assert.IsFalse(enumerator.MoveNext());
 
                 fileReader.Close();
             }
