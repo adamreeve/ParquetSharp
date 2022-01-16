@@ -4,7 +4,7 @@
 
 ParquetSharp is a cross-platform .NET library for reading and writing Apache [Parquet][1] files.
 
-It is implemented in C# as a [PInvoke][2] wrapper around [Apache Parquet C++][3] to provide high performance and compatibility.
+It is implemented in C# as a [PInvoke][2] wrapper around [Apache Parquet C++][3] to provide high performance and compatibility. Check out [ParquetSharp.DataFrame][4] if you need a convenient integration with the .NET [DataFrames][5].
 
 Supported platforms:
 
@@ -16,6 +16,8 @@ Supported platforms:
 [1]: https://github.com/apache/parquet-format
 [2]: https://docs.microsoft.com/en-us/cpp/dotnet/how-to-call-native-dlls-from-managed-code-using-pinvoke
 [3]: https://github.com/apache/arrow
+[4]: https://github.com/G-Research/ParquetSharp.DataFrame
+[5]: https://docs.microsoft.com/en-us/dotnet/api/microsoft.data.analysis.dataframe
 
 |                       | Status                                                                                                                                                                                                                         |
 | --------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -102,6 +104,16 @@ file.Close();
 
 ParquetSharp allows the user to override the mapping between C# and Parquet types. Check the [Type Factories documentation](TypeFactories.md) for more information.
 
+### PowerShell
+
+It's possible to use ParquetSharp from PowerShell.
+You can install ParquetSharp with the [NuGet command line interface](https://docs.microsoft.com/en-us/nuget/reference/nuget-exe-cli-reference),
+then use `Add-Type` to load `ParquetSharp.dll`.
+However, you must ensure that the appropriate `ParquetSharpNative.dll` for your architecture and OS can be loaded as required,
+either by putting it somewhere in your `PATH` or in the same directory as `ParquetSharp.dll`.
+For examples of how to use ParquetSharp from PowerShell,
+see [these scripts from Apteco](https://github.com/Apteco/HelperScripts/tree/master/scripts/parquet).
+
 ## Rationale
 
 We desired a Parquet implementation with the following properties:
@@ -130,13 +142,13 @@ Typically this can arise when attempting to access an instance whose owner has b
 
 As only 64-bit runtimes are available, ParquetSharp cannot be referenced by a 32-bit project.  For example, using the library from F# Interactive requires running `fsiAnyCpu.exe` rather than `fsi.exe`.
 
-In the 5.0.X beta versions, reading nested structures was introduced. However, nesting information about nulls is lost when reading columns with Repetition Level optional inside structs with Repetition Level optional. ParquetSharp does not provide information about whether the column or the enclosing struct is null.
+In the 5.0.X versions, reading nested structures was introduced. However, nesting information about nulls is lost when reading columns with Repetition Level optional inside structs with Repetition Level optional. ParquetSharp does not yet provide information about whether the column or the enclosing struct is null.
 
 ## Building
 
 Building ParquetSharp for Windows requires the following dependencies:
 - Visual Studio 2019 (16.4 or higher)
-- Apache Arrow (5.0.0)
+- Apache Arrow (6.0.1)
 
 For building Arrow (including Parquet) and its dependencies, we recommend using Microsoft's [vcpkg](https://github.com/Microsoft/vcpkg). Note that the Windows build needs to be done in a Visual Studio x64 Native Tools Command Prompt for the build script to succeed.
 
