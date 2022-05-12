@@ -106,9 +106,9 @@ namespace ParquetSharp.Benchmark
 
             if (Check.Enabled)
             {
-                Check.ArraysAreEqual(_allDatesAsDateTimeOffsets, (DateTimeOffset[])results[0].Data);
-                Check.ArraysAreEqual(_allObjectIds, (int[])results[1].Data);
-                Check.ArraysAreEqual(_allValues, (float[][])results[2].Data);
+                Check.ArraysAreEqual(_allDatesAsDateTimeOffsets, (DateTimeOffset[]) results[0].Data);
+                Check.ArraysAreEqual(_allObjectIds, (int[]) results[1].Data);
+                Check.ArraysAreEqual(_allValues, (float[][]) results[2].Data);
             }
 
             return results;
@@ -139,7 +139,7 @@ namespace ParquetSharp.Benchmark
                 .OrderBy(i => i)
                 .ToArray();
 
-            var values = dates.Select(d => objectIds.Select(o => Enumerable.Range(0, NumArrayEntries).Select(i => (float)rand.NextDouble()).ToArray()).ToArray()).ToArray();
+            var values = dates.Select(d => objectIds.Select(o => Enumerable.Range(0, NumArrayEntries).Select(i => (float) rand.NextDouble()).ToArray()).ToArray()).ToArray();
             var numRows = values.Select(v => v.Length).Aggregate(0, (sum, l) => sum + l);
 
             return (dates, objectIds, values, numRows);
