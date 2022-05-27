@@ -16,6 +16,8 @@ namespace ParquetSharp
                 .GetConverter<TLogical, TPhysical>(ColumnDescriptor, columnReader.ColumnChunkMetaData);
         }
 
+        public override bool HasNext => Source.HasNext;
+
         public override int ReadBatch(Span<TElement> destination)
         {
             // Otherwise deal with flat values.

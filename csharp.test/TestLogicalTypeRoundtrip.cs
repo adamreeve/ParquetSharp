@@ -97,6 +97,51 @@ namespace ParquetSharp.Test
             AssertReadRoundtrip(rowsPerBatch, readBufferLength, buffer, expectedColumns);
         }
 
+        [TestCase(DateTimeKind.Utc, TimeUnit.Micros)]
+        [TestCase(DateTimeKind.Utc, TimeUnit.Millis)]
+        [TestCase(DateTimeKind.Unspecified, TimeUnit.Micros)]
+        [TestCase(DateTimeKind.Unspecified, TimeUnit.Millis)]
+        public static void TestDateTimeRoundTrip(DateTimeKind kind, TimeUnit timeUnit)
+        {
+            // ParquetSharp doesn't know the DateTime values upfront,
+            // so we have to specify whether values are UTC in the logical type.
+            var isAdjustedToUtc = kind == DateTimeKind.Utc;
+            var schemaColumns = new Column[]
+            {
+                new Column<DateTime>("dateTime", LogicalType.Timestamp(isAdjustedToUtc, timeUnit)),
+            };
+
+            const int numRows = 100;
+            var startTime = new DateTime(2022, 3, 14, 10, 49, 0, kind);
+            var values = Enumerable.Range(0, numRows).Select(i => startTime + TimeSpan.FromSeconds(i)).ToArray();
+
+            using var buffer = new ResizableBuffer();
+
+            using (var outStream = new BufferOutputStream(buffer))
+            {
+                using var fileWriter = new ParquetFileWriter(outStream, schemaColumns);
+                using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
+                using var columnWriter = rowGroupWriter.Column(0).LogicalWriter<DateTime>();
+                columnWriter.WriteBatch(values);
+                fileWriter.Close();
+            }
+
+            DateTime[] readValues;
+            using (var inStream = new BufferReader(buffer))
+            {
+                using var fileReader = new ParquetFileReader(inStream);
+                using var rowGroupReader = fileReader.RowGroup(0);
+                using var columnReader = rowGroupReader.Column(0);
+                using var logicalReader = columnReader.LogicalReader<DateTime>();
+                readValues = logicalReader.ReadAll(numRows);
+            }
+
+            Assert.AreEqual(values, readValues);
+            var kinds = readValues.Select(v => v.Kind).ToHashSet();
+            Assert.AreEqual(1, kinds.Count);
+            Assert.AreEqual(kind, kinds.First());
+        }
+
         private static WriterProperties CreateWriterProperties(ExpectedColumn[] expectedColumns, bool useDictionaryEncoding)
         {
             var builder = new WriterPropertiesBuilder();
@@ -153,17 +198,14 @@ namespace ParquetSharp.Test
                     if (expected.HasStatistics)
                     {
                         Assert.AreEqual(expected.HasMinMax, statistics?.HasMinMax);
-                        //Assert.AreEqual(expected.NullCount, statistics?.NullCount);
-                        //Assert.AreEqual(expected.NumValues, statistics?.NumValues);
+                        Assert.AreEqual(expected.NullCount, statistics?.NullCount);
+                        Assert.AreEqual(expected.NumValues, statistics?.NumValues);
                         Assert.AreEqual(expected.PhysicalType, statistics?.PhysicalType);
 
-                        // BUG Don't check for decimal until https://issues.apache.org/jira/browse/ARROW-6149 is fixed.
-                        var buggy = expected.LogicalType is DecimalLogicalType;
-
-                        if (expected.HasMinMax && !buggy)
+                        if (expected.HasMinMax)
                         {
-                            Assert.AreEqual(expected.Min, expected.Converter(statistics!.MinUntyped));
-                            Assert.AreEqual(expected.Max, expected.Converter(statistics!.MaxUntyped));
+                            Assert.AreEqual(expected.Min, expected.Converter(statistics!.MinUntyped, descr));
+                            Assert.AreEqual(expected.Max, expected.Converter(statistics!.MaxUntyped, descr));
                         }
                     }
                     else
@@ -295,6 +337,54 @@ namespace ParquetSharp.Test
             }
 
             fileReader.Close();
+        }
+
+        /// <summary>
+        /// This checks that LogicalColumnReader's GetEnumerator() works correctly
+        /// when the column is longer than the buffer length but not an exact multiple
+        /// (see https://github.com/G-Research/ParquetSharp/issues/242).
+        /// </summary>
+        [Test]
+        public static void TestLargeArraysEnumerator()
+        {
+            CheckEnumerator(4096, Enumerable.Range(0, 4100).ToArray());
+            CheckEnumerator(4096, Enumerable.Range(0, 4100).Select(i => new[] {$"row {i}"}).ToArray());
+        }
+
+        private static void CheckEnumerator<T>(int bufferLength, T[] values)
+        {
+            using var buffer = new ResizableBuffer();
+
+            using (var output = new BufferOutputStream(buffer))
+            {
+                var columns = new Column[] {new Column<T>("col0")};
+
+                using var fileWriter = new ParquetFileWriter(output, columns);
+                using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
+
+                using var col = rowGroupWriter.Column(0).LogicalWriter<T>(bufferLength);
+                col.WriteBatch(values);
+
+                fileWriter.Close();
+            }
+
+            using (var input = new BufferReader(buffer))
+            {
+                using var fileReader = new ParquetFileReader(input);
+                using var rowGroupReader = fileReader.RowGroup(0);
+
+                using var col = rowGroupReader.Column(0).LogicalReader<T>(bufferLength);
+
+                var enumerator = col.GetEnumerator();
+                for (var i = 0; i < values.Length; i++)
+                {
+                    Assert.IsTrue(enumerator.MoveNext());
+                    Assert.AreEqual(values[i], enumerator.Current);
+                }
+                Assert.IsFalse(enumerator.MoveNext());
+
+                fileReader.Close();
+            }
         }
 
         [Test]
@@ -507,34 +597,65 @@ namespace ParquetSharp.Test
             fileWriter.Close();
         }
 
-        private static GroupNode CreateRequiredArraySchemaNode()
+        /// <summary>
+        /// A defined levels stream isn't required for a nested int,
+        /// so check we can handle that.
+        /// </summary>
+        [Test]
+        public static void TestRequiredNestedRoundtripInt()
         {
-            return new GroupNode(
-                "schema",
-                Repetition.Required,
-                new Node[]
+            var values = Enumerable.Range(0, 100).Select(i => new Nested<int>(i)).ToArray();
+            CheckNestedRoundtrip(values, new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32));
+        }
+
+        [Test]
+        public static void TestRequiredNestedRoundtripString()
+        {
+            var values = Enumerable.Range(0, 100).Select(i => new Nested<string>($"row {i}")).ToArray();
+            CheckNestedRoundtrip(values, new PrimitiveNode("element", Repetition.Required, LogicalType.String(), PhysicalType.ByteArray));
+        }
+
+        [Test]
+        public static void TestRequiredString()
+        {
+            var values = Enumerable.Range(0, 100).Select(i => $"row {i}").ToArray();
+            CheckRoundtrip(values, new PrimitiveNode("item", Repetition.Required, LogicalType.String(), PhysicalType.ByteArray), (x, y) => x == y);
+        }
+
+        private static void CheckEnumerator<T>(T[] values)
+        {
+            using var buffer = new ResizableBuffer();
+
+            using (var output = new BufferOutputStream(buffer))
+            {
+                var columns = new Column[] {new Column<T>("col0")};
+
+                using var fileWriter = new ParquetFileWriter(output, columns);
+                using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
+
+                using var col = rowGroupWriter.Column(0).LogicalWriter<T>();
+                col.WriteBatch(values);
+
+                fileWriter.Close();
+            }
+
+            using (var input = new BufferReader(buffer))
+            {
+                using var fileReader = new ParquetFileReader(input);
+                using var rowGroupReader = fileReader.RowGroup(0);
+
+                using var col = rowGroupReader.Column(0).LogicalReader<T>();
+
+                var enumerator = col.GetEnumerator();
+                for (var i = 0; i < values.Length; i++)
                 {
-                    // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
-                    // The outer-most level must be a group annotated with LIST that contains a single field named list.
-                    // The repetition of this level must be either optional or required and determines whether the list is nullable.
-                    new GroupNode(
-                        "required_array",
-                        Repetition.Required,
-                        new Node[]
-                        {
-                            new GroupNode(
-                                "list",
-                                Repetition.Repeated,
-                                new Node[]
-                                {
-                                    new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32)
-                                }
-                            )
-                        },
-                        LogicalType.List()
-                    )
+                    Assert.IsTrue(enumerator.MoveNext());
+                    Assert.AreEqual(values[i], enumerator.Current);
                 }
-            );
+                Assert.IsFalse(enumerator.MoveNext());
+
+                fileReader.Close();
+            }
         }
 
         [Test]
@@ -651,6 +772,83 @@ namespace ParquetSharp.Test
             Assert.AreEqual(4, rowGroup.MetaData.NumRows);
             var allData = columnReader.ReadAll(4);
             Assert.AreEqual(expected, allData);
+        }
+
+        private static GroupNode CreateRequiredArraySchemaNode()
+        {
+            return new GroupNode(
+                "schema",
+                Repetition.Required,
+                new Node[]
+                {
+                    // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
+                    // The outer-most level must be a group annotated with LIST that contains a single field named list.
+                    // The repetition of this level must be either optional or required and determines whether the list is nullable.
+                    new GroupNode(
+                        "required_array",
+                        Repetition.Required,
+                        new Node[]
+                        {
+                            new GroupNode(
+                                "list",
+                                Repetition.Repeated,
+                                new Node[]
+                                {
+                                    new PrimitiveNode("element", Repetition.Required, LogicalType.None(), PhysicalType.Int32)
+                                }
+                            )
+                        },
+                        LogicalType.List()
+                    )
+                }
+            );
+        }
+
+        private static void CheckNestedRoundtrip<T>(Nested<T>[] values, PrimitiveNode elementNode)
+        {
+            bool AreEqual(Nested<T> x, Nested<T> y)
+            {
+                if (x.Value == null && y.Value == null)
+                {
+                    return true;
+                }
+                return x.Value!.Equals(y.Value);
+            }
+
+            CheckRoundtrip(values, new GroupNode("struct", Repetition.Required, new[] {elementNode}), AreEqual);
+        }
+
+        private static void CheckRoundtrip<T>(T[] values, Node node, Func<T, T, bool> areEqual)
+        {
+            using var buffer = new ResizableBuffer();
+
+            using (var output = new BufferOutputStream(buffer))
+            {
+                var schemaNode = new GroupNode("schema", Repetition.Required, new[] {node});
+
+                using var fileWriter = new ParquetFileWriter(output, schemaNode, WriterProperties.GetDefaultWriterProperties());
+                using var rowGroupWriter = fileWriter.AppendBufferedRowGroup();
+                using var colWriter = rowGroupWriter.Column(0).LogicalWriter<T>();
+
+                colWriter.WriteBatch(values);
+
+                fileWriter.Close();
+            }
+
+            using var input = new BufferReader(buffer);
+            using var fileReader = new ParquetFileReader(input);
+            using var rowGroupReader = fileReader.RowGroup(0);
+            using var colReader = rowGroupReader.Column(0).LogicalReader<T>();
+
+            var actual = colReader.ReadAll((int) rowGroupReader.MetaData.NumRows);
+            Assert.IsNotEmpty(actual);
+            Assert.AreEqual(values.Length, actual.Length);
+            for (int i = 0; i < values.Length; i++)
+            {
+                Assert.IsTrue(areEqual(values[i], actual[i]));
+            }
+
+            fileReader.Close();
         }
 
         private static ExpectedColumn[] CreateExpectedColumns()
@@ -897,7 +1095,8 @@ namespace ParquetSharp.Test
                     Values = Enumerable.Range(0, NumRows).Select(i => ((decimal) i * i * i) / 1000 - 10).ToArray(),
                     Min = -10m,
                     Max = ((NumRows - 1m) * (NumRows - 1m) * (NumRows - 1m)) / 1000 - 10,
-                    Converter = v => LogicalRead.ToDecimal((FixedLenByteArray) v, 3)
+                    Converter = (v, descr) => LogicalRead.ToDecimal(
+                        (FixedLenByteArray) v, Decimal128.GetScaleMultiplier(descr.TypeScale))
                 },
                 new ExpectedColumn
                 {
@@ -911,7 +1110,8 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 10) / 11,
                     Min = -9.999m,
                     Max = ((NumRows - 1m) * (NumRows - 1m) * (NumRows - 1m)) / 1000 - 10,
-                    Converter = v => LogicalRead.ToDecimal((FixedLenByteArray) v, 3)
+                    Converter = (v, descr) => LogicalRead.ToDecimal(
+                        (FixedLenByteArray) v, Decimal128.GetScaleMultiplier(descr.TypeScale))
                 },
                 new ExpectedColumn
                 {
@@ -923,7 +1123,7 @@ namespace ParquetSharp.Test
                     Values = Enumerable.Range(0, NumRows).Select(i => new Guid(i, 0x1234, 0x5678, 0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x7F)).ToArray(),
                     Min = new Guid(0, 0x1234, 0x5678, 0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x7F),
                     Max = new Guid(NumRows - 1, 0x1234, 0x5678, 0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x7F),
-                    Converter = v => LogicalRead.ToUuid((FixedLenByteArray) v)
+                    Converter = (v, _) => LogicalRead.ToUuid((FixedLenByteArray) v)
                 },
                 new ExpectedColumn
                 {
@@ -937,7 +1137,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 10) / 11,
                     Min = new Guid(1, 0x1234, 0x5678, 0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x7F),
                     Max = new Guid(NumRows - 1, 0x1234, 0x5678, 0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x7F),
-                    Converter = v => LogicalRead.ToUuid((FixedLenByteArray) v)
+                    Converter = (v, _) => LogicalRead.ToUuid((FixedLenByteArray) v)
                 },
                 new ExpectedColumn
                 {
@@ -967,7 +1167,7 @@ namespace ParquetSharp.Test
                     Values = Enumerable.Range(0, NumRows).Select(i => new DateTime(2018, 01, 01) + TimeSpan.FromHours(i)).ToArray(),
                     Min = new DateTime(2018, 01, 01),
                     Max = new DateTime(2018, 01, 01) + TimeSpan.FromHours(NumRows - 1),
-                    Converter = v => LogicalRead.ToDateTimeMicros((long) v)
+                    Converter = (v, _) => LogicalRead.ToDateTimeMicros((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -979,7 +1179,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 10) / 11,
                     Min = new DateTime(2018, 01, 01) + TimeSpan.FromHours(1),
                     Max = new DateTime(2018, 01, 01) + TimeSpan.FromHours(NumRows - 1),
-                    Converter = v => LogicalRead.ToDateTimeMicros((long) v)
+                    Converter = (v, _) => LogicalRead.ToDateTimeMicros((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -990,7 +1190,7 @@ namespace ParquetSharp.Test
                     Values = Enumerable.Range(0, NumRows).Select(i => new DateTime(2018, 01, 01) + TimeSpan.FromHours(i)).ToArray(),
                     Min = new DateTime(2018, 01, 01),
                     Max = new DateTime(2018, 01, 01) + TimeSpan.FromHours(NumRows - 1),
-                    Converter = v => LogicalRead.ToDateTimeMillis((long) v)
+                    Converter = (v, _) => LogicalRead.ToDateTimeMillis((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -1003,7 +1203,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 10) / 11,
                     Min = new DateTime(2018, 01, 01) + TimeSpan.FromHours(1),
                     Max = new DateTime(2018, 01, 01) + TimeSpan.FromHours(NumRows - 1),
-                    Converter = v => LogicalRead.ToDateTimeMillis((long) v)
+                    Converter = (v, _) => LogicalRead.ToDateTimeMillis((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -1013,7 +1213,7 @@ namespace ParquetSharp.Test
                     Values = Enumerable.Range(0, NumRows).Select(i => new DateTimeNanos(new DateTime(2018, 01, 01) + TimeSpan.FromHours(i))).ToArray(),
                     Min = new DateTimeNanos(new DateTime(2018, 01, 01)),
                     Max = new DateTimeNanos(new DateTime(2018, 01, 01) + TimeSpan.FromHours(NumRows - 1)),
-                    Converter = v => new DateTimeNanos((long) v)
+                    Converter = (v, _) => new DateTimeNanos((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -1025,7 +1225,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 10) / 11,
                     Min = new DateTimeNanos(new DateTime(2018, 01, 01) + TimeSpan.FromHours(1)),
                     Max = new DateTimeNanos(new DateTime(2018, 01, 01) + TimeSpan.FromHours(NumRows - 1)),
-                    Converter = v => new DateTimeNanos((long) v)
+                    Converter = (v, _) => new DateTimeNanos((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -1035,7 +1235,7 @@ namespace ParquetSharp.Test
                     Values = Enumerable.Range(0, NumRows).Select(i => TimeSpan.FromHours(-13) + TimeSpan.FromHours(i)).ToArray(),
                     Min = TimeSpan.FromHours(-13),
                     Max = TimeSpan.FromHours(-13 + NumRows - 1),
-                    Converter = v => LogicalRead.ToTimeSpanMicros((long) v)
+                    Converter = (v, _) => LogicalRead.ToTimeSpanMicros((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -1047,7 +1247,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 10) / 11,
                     Min = TimeSpan.FromHours(-13 + 1),
                     Max = TimeSpan.FromHours(-13 + NumRows - 1),
-                    Converter = v => LogicalRead.ToTimeSpanMicros((long) v)
+                    Converter = (v, _) => LogicalRead.ToTimeSpanMicros((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -1058,7 +1258,7 @@ namespace ParquetSharp.Test
                     Values = Enumerable.Range(0, NumRows).Select(i => TimeSpan.FromHours(-13) + TimeSpan.FromHours(i)).ToArray(),
                     Min = TimeSpan.FromHours(-13),
                     Max = TimeSpan.FromHours(-13 + NumRows - 1),
-                    Converter = v => LogicalRead.ToTimeSpanMillis((int) v)
+                    Converter = (v, _) => LogicalRead.ToTimeSpanMillis((int) v)
                 },
                 new ExpectedColumn
                 {
@@ -1071,7 +1271,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 10) / 11,
                     Min = TimeSpan.FromHours(-13 + 1),
                     Max = TimeSpan.FromHours(-13 + NumRows - 1),
-                    Converter = v => LogicalRead.ToTimeSpanMillis((int) v)
+                    Converter = (v, _) => LogicalRead.ToTimeSpanMillis((int) v)
                 },
                 new ExpectedColumn
                 {
@@ -1081,7 +1281,7 @@ namespace ParquetSharp.Test
                     Values = Enumerable.Range(0, NumRows).Select(i => new TimeSpanNanos(TimeSpan.FromHours(-13) + TimeSpan.FromHours(i))).ToArray(),
                     Min = new TimeSpanNanos(TimeSpan.FromHours(-13)),
                     Max = new TimeSpanNanos(TimeSpan.FromHours(-13 + NumRows - 1)),
-                    Converter = v => new TimeSpanNanos((long) v)
+                    Converter = (v, _) => new TimeSpanNanos((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -1093,7 +1293,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 10) / 11,
                     Min = new TimeSpanNanos(TimeSpan.FromHours(-13 + 1)),
                     Max = new TimeSpanNanos(TimeSpan.FromHours(-13 + NumRows - 1)),
-                    Converter = v => new TimeSpanNanos((long) v)
+                    Converter = (v, _) => new TimeSpanNanos((long) v)
                 },
                 new ExpectedColumn
                 {
@@ -1105,7 +1305,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 17) / 18,
                     Min = "",
                     Max = "Hello, 98!",
-                    Converter = v => LogicalRead.ToString((ByteArray) v)
+                    Converter = (v, _) => LogicalRead.ToString((ByteArray) v)
                 },
                 new ExpectedColumn
                 {
@@ -1118,7 +1318,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 8) / 9,
                     Min = "{ \"id\", 1 }",
                     Max = "{ \"id\", 98 }",
-                    Converter = v => LogicalRead.ToString((ByteArray) v)
+                    Converter = (v, _) => LogicalRead.ToString((ByteArray) v)
                 },
                 new ExpectedColumn
                 {
@@ -1129,7 +1329,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 5) / 6,
                     Min = new byte[0],
                     Max = BitConverter.GetBytes(NumRows - 1),
-                    Converter = v => LogicalRead.ToByteArray((ByteArray) v)
+                    Converter = (v, _) => LogicalRead.ToByteArray((ByteArray) v)
                 },
                 new ExpectedColumn
                 {
@@ -1142,7 +1342,7 @@ namespace ParquetSharp.Test
                     NumValues = NumRows - (NumRows + 2) / 3,
                     Min = BitConverter.GetBytes(1),
                     Max = BitConverter.GetBytes(NumRows - 1),
-                    Converter = v => LogicalRead.ToByteArray((ByteArray) v)
+                    Converter = (v, _) => LogicalRead.ToByteArray((ByteArray) v)
                 },
                 new ExpectedColumn
                 {
@@ -1255,7 +1455,7 @@ namespace ParquetSharp.Test
                     NumValues = (NumRows / 3 + 1) * 3,
                     Min = BitConverter.GetBytes(0),
                     Max = BitConverter.GetBytes(252),
-                    Converter = v => LogicalRead.ToByteArray((ByteArray) v)
+                    Converter = (v, _) => LogicalRead.ToByteArray((ByteArray) v)
                 }
             };
         }
@@ -1276,7 +1476,7 @@ namespace ParquetSharp.Test
             public long NullCount;
             public long NumValues = NumRows;
 
-            public Func<object, object> Converter = v => v;
+            public Func<object, ColumnDescriptor, object> Converter = (v, _) => v;
         }
 
         private const int NumRows = 119;

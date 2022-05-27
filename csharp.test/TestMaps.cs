@@ -25,9 +25,9 @@ namespace ParquetSharp.Test
             using var col1Reader = rowGroupReader.Column(1).LogicalReader<string[]>();
             using var col2Reader = rowGroupReader.Column(2).LogicalReader<string>();
 
-            var col0Actual = col0Reader.ReadAll(2);
-            var col1Actual = col1Reader.ReadAll(2);
-            var col2Actual = col2Reader.ReadAll(2);
+            Assert.AreEqual(new[] {new[] {"key", "value"}, new[] {"key", "value"}}, col0Reader.ReadAll(2));
+            Assert.AreEqual(new[] {new[] {"aaaa", "1111"}, new[] {"bbbb", "2222"}}, col1Reader.ReadAll(2));
+            Assert.AreEqual(new[] {"foo", "bar"}, col2Reader.ReadAll(2));
         }
 
         [Test]

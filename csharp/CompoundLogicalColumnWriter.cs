@@ -240,7 +240,7 @@ namespace ParquetSharp
                 _converter(valuesSpan, DefLevels, buffer, nullDefinitionLevel);
 
                 // If the leaves are required, we have to write the deflevel because the converter won't do this for us.
-                if (nullDefinitionLevel == -1 && DefLevels != null)
+                if (DefLevels != null && nullDefinitionLevel == -1)
                 {
                     DefLevels[0] = leafDefinitionLevel;
                 }
