@@ -489,6 +489,50 @@ namespace ParquetSharp.Test
             Assert.AreEqual(rows[3].S, 8);
         }
 
+        [Test]
+        public static void TestNestedGroupArrayRoundTrip()
+        {
+            using var buffer = new ResizableBuffer();
+
+            var rowsToWrite = new[]
+            {
+                new RowWithNestedGroupArray {Nested = new [] {new NestedGroup {Q = 1, R = 2}}, S = 3},
+                new RowWithNestedGroupArray {Nested = Array.Empty<NestedGroup>(), S = 4},
+                new RowWithNestedGroupArray {Nested = new [] {new NestedGroup {Q = 5, R = 6}, new NestedGroup {Q = 7, R = 8}}, S = 9},
+                new RowWithNestedGroupArray {Nested = new [] {new NestedGroup {Q = 10, R = 11}}, S = 12},
+            };
+
+            using (var outputStream = new BufferOutputStream(buffer))
+            {
+                using var writer = ParquetFile.CreateRowWriter<RowWithNestedGroupArray>(outputStream);
+
+                writer.WriteRows(rowsToWrite);
+                writer.Close();
+            }
+
+            using var inputStream = new BufferReader(buffer);
+            using var reader = ParquetFile.CreateRowReader<RowWithNestedGroupArray>(inputStream);
+
+            var rows = reader.ReadRows(0);
+
+            Assert.AreEqual(rows[0].Nested[0].Q, 1);
+            Assert.AreEqual(rows[0].Nested[0].R!, 2);
+            Assert.AreEqual(rows[0].S, 3);
+
+            Assert.IsEmpty(rows[1].Nested);
+            Assert.AreEqual(rows[1].S, 4);
+
+            Assert.AreEqual(rows[2].Nested[0].Q, 5);
+            Assert.AreEqual(rows[2].Nested[0].R!, 6);
+            Assert.AreEqual(rows[2].Nested[1].Q, 7);
+            Assert.AreEqual(rows[2].Nested[1].R!, 8);
+            Assert.AreEqual(rows[2].S, 9);
+
+            Assert.AreEqual(rows[3].Nested[0].Q, 10);
+            Assert.AreEqual(rows[3].Nested[0].R!, 11);
+            Assert.AreEqual(rows[3].S, 12);
+        }
+
         private struct NestedGroup
         {
             [MapToColumn("A")]
@@ -520,6 +564,15 @@ namespace ParquetSharp.Test
         {
             [MapToGroup("N")]
             public NestedArrayGroup Nested { get; set; }
+
+            [MapToColumn("C")]
+            public int S { get; set; }
+        }
+
+        private struct RowWithNestedGroupArray
+        {
+            [MapToGroup("N")]
+            public NestedGroup[] Nested { get; set; }
 
             [MapToColumn("C")]
             public int S { get; set; }
