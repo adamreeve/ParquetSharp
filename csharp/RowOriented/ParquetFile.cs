@@ -401,22 +401,35 @@ namespace ParquetSharp.RowOriented
 
         private static GroupNode BuildSchemaNode(MappedField[] fields)
         {
-            var leafNodes = new List<Node>();
+            var schemaNodes = new List<Node>();
             foreach (var (_, field, isLeaf) in DepthFirstFields(fields))
             {
                 if (isLeaf)
                 {
-                    leafNodes.Add(GetNode(field));
+                    schemaNodes.Add(GetNode(field));
                 }
                 else
                 {
-                    var nullable = IsNullable(field.Type, out _);
-                    var groupNode = GetGroupNode(field.SchemaName, nullable, leafNodes.ToArray());
-                    leafNodes = new List<Node> {groupNode};
+                    var numChildren = field.GetChildren().Length;
+                    var numPrevNodes = schemaNodes.Count - numChildren;
+                    var childNodes = schemaNodes.GetRange(numPrevNodes, numChildren).ToArray();
+                    schemaNodes = schemaNodes.GetRange(0, numPrevNodes);
+                    var nullable = IsNullable(GetLeafElementType(field.Type), out _);
+                    var groupNodeName = field.Type.IsArray ? "element" : field.SchemaName;
+                    var groupNode = GetGroupNode(groupNodeName, nullable, childNodes);
+                    var type = field.Type;
+                    while (type.IsArray)
+                    {
+                        type = type.GetElementType()!;
+                        groupNode = new GroupNode("list", Repetition.Repeated, new [] {groupNode});
+                        var nodeName = type.IsArray ? "element" : field.SchemaName;
+                        groupNode = new GroupNode(nodeName, Repetition.Optional, new [] {groupNode}, LogicalType.List());
+                    }
+                    schemaNodes.Add(groupNode);
                 }
             }
 
-            return GetGroupNode("schema", false, leafNodes.ToArray());
+            return GetGroupNode("schema", false, schemaNodes.ToArray());
         }
 
         /// <summary>
@@ -534,10 +547,11 @@ namespace ParquetSharp.RowOriented
                 var mappedGroup = field.GetCustomAttribute<MapToGroupAttribute>()?.GroupName;
                 var mappedColumn = field.GetCustomAttribute<MapToColumnAttribute>()?.ColumnName ?? mappedGroup;
                 var mappedField = new MappedField(field, mappedColumn, field.FieldType, parent);
-                var children = mappedGroup == null
-                    ? Array.Empty<MappedField>()
-                    : GetFieldsAndProperties(field.FieldType, mappedField);
-                mappedField.Children = children;
+                if (mappedGroup != null)
+                {
+                    var fieldType = GetLeafElementType(field.FieldType);
+                    mappedField.Children = GetFieldsAndProperties(fieldType, mappedField);
+                }
                 list.Add(mappedField);
             }
 
@@ -546,10 +560,11 @@ namespace ParquetSharp.RowOriented
                 var mappedGroup = property.GetCustomAttribute<MapToGroupAttribute>()?.GroupName;
                 var mappedColumn = property.GetCustomAttribute<MapToColumnAttribute>()?.ColumnName ?? mappedGroup;
                 var mappedField = new MappedField(property, mappedColumn, property.PropertyType, parent);
-                var children = mappedGroup == null
-                    ? Array.Empty<MappedField>()
-                    : GetFieldsAndProperties(property.PropertyType, mappedField);
-                mappedField.Children = children;
+                if (mappedGroup != null)
+                {
+                    var propType = GetLeafElementType(property.PropertyType);
+                    mappedField.Children = GetFieldsAndProperties(propType, mappedField);
+                }
                 list.Add(mappedField);
             }
 
@@ -645,6 +660,16 @@ namespace ParquetSharp.RowOriented
                 }
 
             }
+            return type;
+        }
+
+        private static Type GetLeafElementType(Type type)
+        {
+            while (type.IsArray)
+            {
+                type = type.GetElementType()!;
+            }
+
             return type;
         }
 
