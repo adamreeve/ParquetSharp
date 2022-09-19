@@ -14,7 +14,7 @@ namespace ParquetSharp
         {
         }
 
-        internal static LogicalColumnWriter Create(ColumnWriter columnWriter, int bufferLength, Type? elementTypeOverride)
+        internal static LogicalColumnWriter Create(ColumnWriter columnWriter, int bufferLength, Type? elementType, Type? elementTypeOverride)
         {
             if (columnWriter == null) throw new ArgumentNullException(nameof(columnWriter));
 
@@ -22,11 +22,16 @@ namespace ParquetSharp
             // then we already know what the column writer logical system type should be.
             var columns = columnWriter.RowGroupWriter.ParquetFileWriter.Columns;
             var columnLogicalTypeOverride = GetLeafElementType(elementTypeOverride ?? columns?[columnWriter.ColumnIndex].LogicalSystemType);
+            if (elementType == null)
+            {
+                elementType = elementTypeOverride ?? columns?[columnWriter.ColumnIndex].LogicalSystemType;
+            }
             // Nested types must be used if writing data with a nested structure
             const bool useNesting = true;
 
             return columnWriter.ColumnDescriptor.Apply(
                 columnWriter.LogicalTypeFactory,
+                elementType,
                 columnLogicalTypeOverride,
                 useNesting,
                 new Creator(columnWriter, bufferLength));
@@ -34,7 +39,7 @@ namespace ParquetSharp
 
         internal static LogicalColumnWriter<TElementType> Create<TElementType>(ColumnWriter columnWriter, int bufferLength, Type? elementTypeOverride)
         {
-            var writer = Create(columnWriter, bufferLength, elementTypeOverride);
+            var writer = Create(columnWriter, bufferLength, typeof(TElementType), elementTypeOverride);
 
             try
             {
@@ -42,6 +47,7 @@ namespace ParquetSharp
             }
             catch (InvalidCastException exception)
             {
+                // TODO: This will always return a writer with the specified TElement but TPhysical and TLogical might now differ?
                 var logicalWriterType = writer.GetType();
                 var colName = columnWriter.ColumnDescriptor.Name;
                 writer.Dispose();

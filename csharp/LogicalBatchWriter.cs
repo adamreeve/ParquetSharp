@@ -99,9 +99,17 @@ namespace ParquetSharp
 
             // Map values are treated the same as lists,
             // as the structure of the map keys and values matches that of lists.
-            if (typeof(TElement).IsArray && SchemaUtils.IsListOrMap(schemaNodes))
+            if (SchemaUtils.IsListOrMap(schemaNodes))
             {
-                return MakeArrayWriter<TElement>(schemaNodes, definitionLevel, repetitionLevel, firstRepetitionLevel);
+                if (typeof(TElement).IsArray)
+                {
+                    return MakeArrayWriter<TElement>(schemaNodes, definitionLevel, repetitionLevel, firstRepetitionLevel);
+                }
+                if (TypeUtils.IsReadOnlyMemory(typeof(TElement), out var romType))
+                {
+                    return MakeReadOnlyMemoryWriter<TElement>(romType, schemaNodes, definitionLevel, repetitionLevel, firstRepetitionLevel);
+                }
+                throw new Exception($"Schema represents a list or map, which is incompatible with type {typeof(TElement)}");
             }
 
             throw new Exception($"Failed to create a batch writer for type {typeof(TElement)}");
@@ -133,6 +141,32 @@ namespace ParquetSharp
             var arrayWriterType = typeof(ArrayWriter<,>).MakeGenericType(containedType, typeof(TPhysical));
             return (ILogicalBatchWriter<TElement>) Activator.CreateInstance(
                 arrayWriterType, writer0, writer1, _physicalWriter, optional,
+                arrayDefinitionLevel, repetitionLevel, firstRepetitionLevel);
+        }
+
+        /// <summary>
+        /// Create a new writer for ReadOnlyMemory values
+        /// </summary>
+        /// <typeparam name="TElement">The type of ReadOnlyMemory to write</typeparam>
+        private ILogicalBatchWriter<TElement> MakeReadOnlyMemoryWriter<TElement>(
+            Type containedType,
+            Node[] schemaNodes,
+            short definitionLevel,
+            short repetitionLevel,
+            short firstRepetitionLevel)
+        {
+            var optional = schemaNodes[0].Repetition == Repetition.Optional;
+            var arrayDefinitionLevel = (short) (optional ? definitionLevel + 1 : definitionLevel);
+            var elementDefinitionLevel = (short) (arrayDefinitionLevel + 1);
+            var elementRepetitionLevel = (short) (repetitionLevel + 1);
+            var elementSchema = schemaNodes.AsSpan().Slice(2).ToArray();
+
+            var writer0 = MakeGenericWriter(containedType, elementSchema, elementDefinitionLevel, elementRepetitionLevel, firstRepetitionLevel);
+            var writer1 = MakeGenericWriter(containedType, elementSchema, elementDefinitionLevel, elementRepetitionLevel, repetitionLevel);
+
+            var writerType = typeof(ReadOnlyMemoryWriter<,>).MakeGenericType(containedType, typeof(TPhysical));
+            return (ILogicalBatchWriter<TElement>) Activator.CreateInstance(
+                writerType, writer0, writer1, _physicalWriter,
                 arrayDefinitionLevel, repetitionLevel, firstRepetitionLevel);
         }
 
@@ -363,6 +397,68 @@ namespace ParquetSharp
         private readonly short _repetitionLevel;
         private readonly short _definitionLevel;
         private readonly bool _optionalArrays;
+    }
+
+    /// <summary>
+    /// Functionally equivalent to an ArrayWriter but using ReadOnlyMemory values for items
+    /// (and so cannot write null values)
+    /// </summary>
+    /// <typeparam name="TItem">The type of the item in the ReadOnlyMemory values</typeparam>
+    /// <typeparam name="TPhysical">The underlying physical type of the column</typeparam>
+    internal sealed class ReadOnlyMemoryWriter<TItem, TPhysical> : ILogicalBatchWriter<ReadOnlyMemory<TItem>>
+        where TPhysical : unmanaged
+    {
+        public ReadOnlyMemoryWriter(
+            ILogicalBatchWriter<TItem> firstElementWriter,
+            ILogicalBatchWriter<TItem> elementWriter,
+            ColumnWriter<TPhysical> physicalWriter,
+            short definitionLevel,
+            short repetitionLevel,
+            short firstRepetitionLevel)
+        {
+            _firstElementWriter = firstElementWriter;
+            _elementWriter = elementWriter;
+            _physicalWriter = physicalWriter;
+            _definitionLevel = definitionLevel;
+            _firstRepetitionLevel = firstRepetitionLevel;
+            _repetitionLevel = repetitionLevel;
+        }
+
+        public void WriteBatch(ReadOnlySpan<ReadOnlyMemory<TItem>> values)
+        {
+            var arrayDefinitionLevel = new[] {_definitionLevel};
+
+            var elementWriter = _firstElementWriter;
+            var arrayRepetitionLevel = new[] {_firstRepetitionLevel};
+
+            for (var i = 0; i < values.Length; ++i)
+            {
+                var item = values[i];
+                if (item.Length > 0)
+                {
+                    elementWriter.WriteBatch(item.Span);
+                }
+                else
+                {
+                    // Write zero length array
+                    _physicalWriter.WriteBatch(
+                        1, arrayDefinitionLevel, arrayRepetitionLevel, Array.Empty<TPhysical>());
+                }
+
+                if (i == 0)
+                {
+                    elementWriter = _elementWriter;
+                    arrayRepetitionLevel[0] = _repetitionLevel;
+                }
+            }
+        }
+
+        private readonly ILogicalBatchWriter<TItem> _firstElementWriter;
+        private readonly ILogicalBatchWriter<TItem> _elementWriter;
+        private readonly ColumnWriter<TPhysical> _physicalWriter;
+        private readonly short _firstRepetitionLevel;
+        private readonly short _repetitionLevel;
+        private readonly short _definitionLevel;
     }
 
     /// <summary>

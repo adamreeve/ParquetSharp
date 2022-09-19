@@ -1130,6 +1130,107 @@ namespace ParquetSharp.Test
         }
 
         [Test]
+        public static void TestWriteReadOnlyMemoryValues([Values] bool arrayColumn)
+        {
+            var data = new int[]
+            {
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+            };
+            var rows = new ReadOnlyMemory<int>[]
+            {
+                data.AsMemory(0, 2),
+                data.AsMemory(2, 2),
+                data.AsMemory(4, 0),
+                data.AsMemory(4, 1),
+                data.AsMemory(5, 5),
+            };
+
+            using var buffer = new ResizableBuffer();
+            using (var outStream = new BufferOutputStream(buffer))
+            {
+                using var fileWriter = new ParquetFileWriter(outStream, new Column[]
+                {
+                    arrayColumn ? new Column<int[]>("a") : new Column<ReadOnlyMemory<int>>("a")
+                });
+                using var rowGroupWriter = fileWriter.AppendRowGroup();
+                using var colWriter = rowGroupWriter.NextColumn().LogicalWriter<ReadOnlyMemory<int>>();
+
+                colWriter.WriteBatch(rows);
+
+                fileWriter.Close();
+            }
+
+            using var inStream = new BufferReader(buffer);
+            using var fileReader = new ParquetFileReader(inStream);
+            using var rowGroup = fileReader.RowGroup(0);
+            using var columnReader = rowGroup.Column(0).LogicalReader<int[]>();
+
+            Assert.AreEqual(5, rowGroup.MetaData.NumRows);
+            var allData = columnReader.ReadAll(5);
+            var expected = rows.Select(row => row.ToArray()).ToArray();
+            Assert.AreEqual(expected, allData);
+        }
+
+        [Test]
+        public static void TestReadOnlyMemoryOfReadOnlyMemory()
+        {
+            var data = new int?[]
+            {
+                0, null, 2, 3, null, 5, 6, null, 8, 9
+            };
+            var intermediateData = new ReadOnlyMemory<int?>[]
+            {
+                data.AsMemory(0, 2),
+                data.AsMemory(2, 2),
+                data.AsMemory(4, 0),
+                data.AsMemory(4, 1),
+                data.AsMemory(5, 5),
+            };
+            var rows = new ReadOnlyMemory<ReadOnlyMemory<int?>>[]
+            {
+                intermediateData.AsMemory(0, 2),
+                intermediateData.AsMemory(2, 2),
+                intermediateData.AsMemory(4, 0),
+                intermediateData.AsMemory(4, 1),
+            };
+
+            using var buffer = new ResizableBuffer();
+
+            using (var outStream = new BufferOutputStream(buffer))
+            {
+                using var fileWriter = new ParquetFileWriter(outStream, new Column[] {new Column<ReadOnlyMemory<ReadOnlyMemory<int?>>>("a")});
+                using var rowGroupWriter = fileWriter.AppendRowGroup();
+                using var colWriter = rowGroupWriter.NextColumn().LogicalWriter<ReadOnlyMemory<ReadOnlyMemory<int?>>>();
+                colWriter.WriteBatch(rows);
+                fileWriter.Close();
+            }
+
+            using var inStream = new BufferReader(buffer);
+            using var fileReader = new ParquetFileReader(inStream);
+            using var rowGroup = fileReader.RowGroup(0);
+            using var columnReader = rowGroup.Column(0).LogicalReader<int?[][]>();
+
+            Assert.AreEqual(4, rowGroup.MetaData.NumRows);
+            var allData = columnReader.ReadAll(4);
+            var expected = rows.Select(row => row.ToArray().Select(values => values.ToArray()).ToArray()).ToArray();
+            Assert.AreEqual(expected, allData);
+        }
+
+        [Test]
+        public static void TestUsesReadOnlyMemoryTypeWhenSpecifiedInColumn()
+        {
+            using var buffer = new ResizableBuffer();
+            using var outStream = new BufferOutputStream(buffer);
+            using var fileWriter = new ParquetFileWriter(outStream, new Column[] {new Column<ReadOnlyMemory<int>>("a")});
+            using var rowGroupWriter = fileWriter.AppendRowGroup();
+            using var colWriter = rowGroupWriter.NextColumn().LogicalWriter();
+
+            Assert.That(colWriter, Is.InstanceOf<LogicalColumnWriter<ReadOnlyMemory<int>>>());
+
+            fileWriter.Close();
+        }
+
+        [Test]
         public static void TestForceSetConvertedTypeSetsConvertedType()
         {
             var expected = new DateTime[]

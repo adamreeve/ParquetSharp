@@ -86,8 +86,8 @@ namespace ParquetSharp.Test
             {
                 using var writer = groupWriter.NextColumn().LogicalWriter<VolumeInDollars>();
             });
-            Assert.That(exception?.Message, Does.StartWith("Tried to get a LogicalColumnWriter for column 0"));
-            Assert.That(exception?.Message, Does.Contain("actual element type is 'System.Single'"));
+            Assert.That(exception?.Message, Does.StartWith("Specified element type '"));
+            Assert.That(exception?.Message, Does.Contain("for column 'values' is not compatible with the expected logical type 'System.Single'"));
         }
 
         [Test]

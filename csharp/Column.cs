@@ -133,15 +133,16 @@ namespace ParquetSharp
                 return new PrimitiveNode(name, p.repetition, entry.logicalType, entry.physicalType, length);
             }
 
-            if (type.IsArray)
+            if (TypeUtils.IsArrayLike(type, out var elementType))
             {
-                var item = CreateSchemaNode(logicalTypeFactory, type.GetElementType(), "item", logicalTypeOverride, length);
+                var item = CreateSchemaNode(logicalTypeFactory, elementType, "item", logicalTypeOverride, length);
                 var list = new GroupNode("list", Repetition.Repeated, new[] {item});
+                var repetition = TypeUtils.IsReadOnlyMemory(type, out _) ? Repetition.Required : Repetition.Optional;
 
                 try
                 {
                     using var listLogicalType = LogicalType.List();
-                    return new GroupNode(name, Repetition.Optional, new[] {list}, listLogicalType);
+                    return new GroupNode(name, repetition, new[] {list}, listLogicalType);
                 }
                 finally
                 {

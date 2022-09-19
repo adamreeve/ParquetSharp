@@ -33,17 +33,34 @@ namespace ParquetSharp
 
         public TReturn Apply<TReturn>(LogicalTypeFactory typeFactory, IColumnDescriptorVisitor<TReturn> visitor)
         {
-            return Apply(typeFactory, null, false, visitor);
+            return Apply(typeFactory, null, null, false, visitor);
         }
 
         public TReturn Apply<TReturn>(LogicalTypeFactory typeFactory, Type? columnLogicalTypeOverride, IColumnDescriptorVisitor<TReturn> visitor)
         {
-            return Apply(typeFactory, columnLogicalTypeOverride, false, visitor);
+            return Apply(typeFactory, null, columnLogicalTypeOverride, false, visitor);
         }
 
-        public TReturn Apply<TReturn>(LogicalTypeFactory typeFactory, Type? columnLogicalTypeOverride, bool useNesting, IColumnDescriptorVisitor<TReturn> visitor)
+        public TReturn Apply<TReturn>(LogicalTypeFactory typeFactory, Type? elementType, Type? columnLogicalTypeOverride, bool useNesting, IColumnDescriptorVisitor<TReturn> visitor)
         {
-            var types = GetSystemTypes(typeFactory, columnLogicalTypeOverride, useNesting);
+            // TODO: Would need to be a new override if not going out in same new major release as the nested change
+            (Type physicalType, Type logicalType, Type elementType) types;
+            if (elementType != null)
+            {
+                var (physicalType, logicalType) = typeFactory.GetSystemTypes(this, columnLogicalTypeOverride);
+                var leafElementType = TypeUtils.GetLeafElementType(elementType);
+                if (leafElementType != logicalType)
+                {
+                    using var path = Path;
+                    var name = path.ToDotString();
+                    throw new InvalidCastException($"Specified element type '{elementType}' for column '{name}' is not compatible with the expected logical type '{logicalType}'");
+                }
+                types = (physicalType, logicalType, elementType);
+            }
+            else
+            {
+                types = GetSystemTypes(typeFactory, columnLogicalTypeOverride, useNesting);
+            }
             var visitorApply = VisitorCache.GetOrAdd((types.physicalType, types.logicalType, types.elementType, typeof(TReturn)), t =>
             {
 

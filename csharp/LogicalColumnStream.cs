@@ -25,27 +25,7 @@ namespace ParquetSharp
 
         protected static Type? GetLeafElementType(Type? type)
         {
-            while (type != null)
-            {
-                if (type != typeof(byte[]) && type.IsArray)
-                {
-                    type = type.GetElementType()!;
-                }
-                else if (TypeUtils.IsNested(type, out var nestedType))
-                {
-                    type = nestedType;
-                }
-                else if (TypeUtils.IsNullableNested(type, out var nullableNestedType))
-                {
-                    type = nullableNestedType;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            return type;
+            return TypeUtils.GetLeafElementType(type);
         }
 
         /// <summary>
