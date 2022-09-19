@@ -109,6 +109,10 @@ namespace ParquetSharp
                 {
                     return MakeReadOnlyMemoryWriter<TElement>(romType, schemaNodes, definitionLevel, repetitionLevel, firstRepetitionLevel);
                 }
+                if (TypeUtils.IsNullable(typeof(TElement), out var nullableInner) && TypeUtils.IsReadOnlyMemory(nullableInner, out var nullableRomType))
+                {
+                    return MakeNullableReadOnlyMemoryWriter<TElement>(nullableRomType, schemaNodes, definitionLevel, repetitionLevel, firstRepetitionLevel);
+                }
                 throw new Exception($"Schema represents a list or map, which is incompatible with type {typeof(TElement)}");
             }
 
@@ -155,6 +159,7 @@ namespace ParquetSharp
             short repetitionLevel,
             short firstRepetitionLevel)
         {
+            // ReadOnlyMemory instances cannot be null, but the schema might still allow optional values
             var optional = schemaNodes[0].Repetition == Repetition.Optional;
             var arrayDefinitionLevel = (short) (optional ? definitionLevel + 1 : definitionLevel);
             var elementDefinitionLevel = (short) (arrayDefinitionLevel + 1);
@@ -167,6 +172,34 @@ namespace ParquetSharp
             var writerType = typeof(ReadOnlyMemoryWriter<,>).MakeGenericType(containedType, typeof(TPhysical));
             return (ILogicalBatchWriter<TElement>) Activator.CreateInstance(
                 writerType, writer0, writer1, _physicalWriter,
+                arrayDefinitionLevel, repetitionLevel, firstRepetitionLevel);
+        }
+
+        /// <summary>
+        /// Create a new writer for nullable ReadOnlyMemory values
+        /// </summary>
+        /// <typeparam name="TElement">The type of ReadOnlyMemory to write</typeparam>
+        private ILogicalBatchWriter<TElement> MakeNullableReadOnlyMemoryWriter<TElement>(
+            Type containedType,
+            Node[] schemaNodes,
+            short definitionLevel,
+            short repetitionLevel,
+            short firstRepetitionLevel)
+        {
+            // We allow using nullable values even if the schema says values are required, but will throw
+            // an exception when trying to write a null value.
+            var optional = schemaNodes[0].Repetition == Repetition.Optional;
+            var arrayDefinitionLevel = (short) (optional ? definitionLevel + 1 : definitionLevel);
+            var elementDefinitionLevel = (short) (arrayDefinitionLevel + 1);
+            var elementRepetitionLevel = (short) (repetitionLevel + 1);
+            var elementSchema = schemaNodes.AsSpan().Slice(2).ToArray();
+
+            var writer0 = MakeGenericWriter(containedType, elementSchema, elementDefinitionLevel, elementRepetitionLevel, firstRepetitionLevel);
+            var writer1 = MakeGenericWriter(containedType, elementSchema, elementDefinitionLevel, elementRepetitionLevel, repetitionLevel);
+
+            var writerType = typeof(NullableReadOnlyMemoryWriter<,>).MakeGenericType(containedType, typeof(TPhysical));
+            return (ILogicalBatchWriter<TElement>) Activator.CreateInstance(
+                writerType, writer0, writer1, _physicalWriter, optional,
                 arrayDefinitionLevel, repetitionLevel, firstRepetitionLevel);
         }
 
@@ -456,6 +489,84 @@ namespace ParquetSharp
         private readonly ILogicalBatchWriter<TItem> _firstElementWriter;
         private readonly ILogicalBatchWriter<TItem> _elementWriter;
         private readonly ColumnWriter<TPhysical> _physicalWriter;
+        private readonly short _firstRepetitionLevel;
+        private readonly short _repetitionLevel;
+        private readonly short _definitionLevel;
+    }
+
+    /// <summary>
+    /// Functionally equivalent to an ArrayWriter but using nullable ReadOnlyMemory values for items
+    /// </summary>
+    /// <typeparam name="TItem">The type of the item in the ReadOnlyMemory values</typeparam>
+    /// <typeparam name="TPhysical">The underlying physical type of the column</typeparam>
+    internal sealed class NullableReadOnlyMemoryWriter<TItem, TPhysical> : ILogicalBatchWriter<ReadOnlyMemory<TItem>?>
+        where TPhysical : unmanaged
+    {
+        public NullableReadOnlyMemoryWriter(
+            ILogicalBatchWriter<TItem> firstElementWriter,
+            ILogicalBatchWriter<TItem> elementWriter,
+            ColumnWriter<TPhysical> physicalWriter,
+            bool optional,
+            short definitionLevel,
+            short repetitionLevel,
+            short firstRepetitionLevel)
+        {
+            _firstElementWriter = firstElementWriter;
+            _elementWriter = elementWriter;
+            _physicalWriter = physicalWriter;
+            _optional = optional;
+            _definitionLevel = definitionLevel;
+            _firstRepetitionLevel = firstRepetitionLevel;
+            _repetitionLevel = repetitionLevel;
+        }
+
+        public void WriteBatch(ReadOnlySpan<ReadOnlyMemory<TItem>?> values)
+        {
+            var arrayDefinitionLevel = new[] {_definitionLevel};
+            var nullDefinitionLevel = new[] {(short) (_definitionLevel - 1)};
+
+            var elementWriter = _firstElementWriter;
+            var arrayRepetitionLevel = new[] {_firstRepetitionLevel};
+
+            for (var i = 0; i < values.Length; ++i)
+            {
+                var item = values[i];
+                if (item.HasValue)
+                {
+                    if (item.Value.Length > 0)
+                    {
+                        elementWriter.WriteBatch(item.Value.Span);
+                    }
+                    else
+                    {
+                        // Write zero length array
+                        _physicalWriter.WriteBatch(
+                            1, arrayDefinitionLevel, arrayRepetitionLevel, Array.Empty<TPhysical>());
+                    }
+                }
+                else if (!_optional)
+                {
+                    throw new InvalidOperationException("Cannot write a null ReadOnlyMemory value for a required column");
+                }
+                else
+                {
+                    // Write a null array entry
+                    _physicalWriter.WriteBatch(
+                        1, nullDefinitionLevel, arrayRepetitionLevel, Array.Empty<TPhysical>());
+                }
+
+                if (i == 0)
+                {
+                    elementWriter = _elementWriter;
+                    arrayRepetitionLevel[0] = _repetitionLevel;
+                }
+            }
+        }
+
+        private readonly ILogicalBatchWriter<TItem> _firstElementWriter;
+        private readonly ILogicalBatchWriter<TItem> _elementWriter;
+        private readonly ColumnWriter<TPhysical> _physicalWriter;
+        private readonly bool _optional;
         private readonly short _firstRepetitionLevel;
         private readonly short _repetitionLevel;
         private readonly short _definitionLevel;

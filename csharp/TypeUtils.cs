@@ -64,6 +64,11 @@ namespace ParquetSharp
                 inner = romType;
                 return true;
             }
+            if (IsNullable(type, out var nullableInner) && IsReadOnlyMemory(nullableInner, out var nullableRomType))
+            {
+                inner = nullableRomType;
+                return true;
+            }
             inner = null!;
             return false;
         }

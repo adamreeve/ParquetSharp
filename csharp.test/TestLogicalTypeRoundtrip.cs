@@ -1172,6 +1172,49 @@ namespace ParquetSharp.Test
         }
 
         [Test]
+        public static void TestWriteNullableReadOnlyMemoryValues([Values] bool arrayColumn)
+        {
+            var data = new int[]
+            {
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+            };
+            var rows = new ReadOnlyMemory<int>?[]
+            {
+                data.AsMemory(0, 2),
+                data.AsMemory(2, 2),
+                data.AsMemory(4, 0),
+                null,
+                data.AsMemory(4, 1),
+                data.AsMemory(5, 5),
+            };
+
+            using var buffer = new ResizableBuffer();
+            using (var outStream = new BufferOutputStream(buffer))
+            {
+                using var fileWriter = new ParquetFileWriter(outStream, new Column[]
+                {
+                    arrayColumn ? new Column<int[]?>("a") : new Column<ReadOnlyMemory<int>?>("a")
+                });
+                using var rowGroupWriter = fileWriter.AppendRowGroup();
+                using var colWriter = rowGroupWriter.NextColumn().LogicalWriter<ReadOnlyMemory<int>?>();
+
+                colWriter.WriteBatch(rows);
+
+                fileWriter.Close();
+            }
+
+            using var inStream = new BufferReader(buffer);
+            using var fileReader = new ParquetFileReader(inStream);
+            using var rowGroup = fileReader.RowGroup(0);
+            using var columnReader = rowGroup.Column(0).LogicalReader<int[]?>();
+
+            Assert.AreEqual(6, rowGroup.MetaData.NumRows);
+            var allData = columnReader.ReadAll(6);
+            var expected = rows.Select(row => row?.ToArray()).ToArray();
+            Assert.AreEqual(expected, allData);
+        }
+
+        [Test]
         public static void TestReadOnlyMemoryOfReadOnlyMemory()
         {
             var data = new int?[]
