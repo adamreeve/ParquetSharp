@@ -37,5 +37,10 @@ namespace ParquetSharp
             inner = null!;
             return false;
         }
+
+        public static unsafe bool UseDecimal128(ColumnDescriptor columnDescriptor)
+        {
+            return columnDescriptor.TypeLength == sizeof(Decimal128);
+        }
     }
 }
