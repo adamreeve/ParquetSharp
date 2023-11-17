@@ -450,18 +450,19 @@ namespace ParquetSharp.Test
             using var buffer = new ResizableBuffer();
             var logicalReadConverterFactory = new ReadConverterFactory();
             var logicalWriteConverterFactory = new WriteConverterFactory();
-            var logicalTypeFactory = new WriteTypeFactory();
+            var writeTypeFactory = new WriteTypeFactory();
+            var readTypeFactory = new ReadTypeFactory();
 
             using (var outputStream = new BufferOutputStream(buffer))
             {
-                using var writer = ParquetFile.CreateRowWriter<TTupleWrite>(outputStream, columnNames, logicalTypeFactory: logicalTypeFactory, logicalWriteConverterFactory: logicalWriteConverterFactory);
+                using var writer = ParquetFile.CreateRowWriter<TTupleWrite>(outputStream, columnNames, logicalTypeFactory: writeTypeFactory, logicalWriteConverterFactory: logicalWriteConverterFactory);
 
                 writer.WriteRows(rows);
                 writer.Close();
             }
 
             using var inputStream = new BufferReader(buffer);
-            using var reader = ParquetFile.CreateRowReader<TTupleRead>(inputStream, logicalTypeFactory: logicalTypeFactory, logicalReadConverterFactory: logicalReadConverterFactory);
+            using var reader = ParquetFile.CreateRowReader<TTupleRead>(inputStream, logicalTypeFactory: readTypeFactory, logicalReadConverterFactory: logicalReadConverterFactory);
 
             var values = reader.ReadRows(rowGroup: 0);
             Assert.AreEqual(expectedRows, values);
@@ -544,6 +545,17 @@ namespace ParquetSharp.Test
             {
                 if (logicalSystemType == typeof(VolumeInDollars)) return base.TryGetParquetTypes(typeof(float), out entry);
                 return base.TryGetParquetTypes(logicalSystemType, out entry);
+            }
+        }
+
+        private sealed class ReadTypeFactory : LogicalTypeFactory
+        {
+            public override (Type physicalType, Type logicalType) GetSystemTypes(ColumnDescriptor descriptor, Type? columnLogicalTypeOverride)
+            {
+                // We have to use the column name to know what type to expose.
+                Assert.IsNull(columnLogicalTypeOverride);
+                using var descriptorPath = descriptor.Path;
+                return base.GetSystemTypes(descriptor, descriptorPath.ToDotVector().First() == "B" ? typeof(VolumeInDollars) : null);
             }
         }
 

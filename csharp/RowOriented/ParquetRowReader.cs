@@ -24,7 +24,7 @@ namespace ParquetSharp.RowOriented
         }
 
         internal ParquetRowReader(RandomAccessFile randomAccessFile, ReadAction readAction, MappedField[] fields, LogicalTypeFactory? logicalTypeFactory = null, LogicalReadConverterFactory? logicalReadConverterFactory = null)
-            : this(new ParquetFileReader(randomAccessFile), readAction, fields, logicalReadConverterFactory)
+            : this(new ParquetFileReader(randomAccessFile), readAction, fields, logicalReadConverterFactory, logicalTypeFactory)
         {
         }
 
@@ -33,9 +33,10 @@ namespace ParquetSharp.RowOriented
         {
         }
 
-        internal ParquetRowReader(ParquetFileReader parquetFileReader, ReadAction readAction, MappedField[] fields, LogicalReadConverterFactory? logicalReadConverterFactory = null)
+        internal ParquetRowReader(ParquetFileReader parquetFileReader, ReadAction readAction, MappedField[] fields, LogicalReadConverterFactory? logicalReadConverterFactory = null, LogicalTypeFactory? logicalTypeFactory = null)
         {
             _parquetFileReader = parquetFileReader;
+            _parquetFileReader.LogicalTypeFactory = logicalTypeFactory ?? LogicalTypeFactory.Default;
             _parquetFileReader.LogicalReadConverterFactory = logicalReadConverterFactory ?? LogicalReadConverterFactory.Default;
             _readAction = readAction;
             _columnMapping = HasExplicitColumnMapping(fields) ? new ExplicitColumnMapping(this, fields) : null;
