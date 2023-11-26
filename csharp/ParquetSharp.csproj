@@ -1,12 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net471;netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>net471;net48;netstandard2.1</TargetFrameworks>
     <LangVersion>9.0</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>ParquetSharp</AssemblyName>
     <RootNamespace>ParquetSharp</RootNamespace>
-    <PlatformTarget Condition="'$(TargetFramework)'=='net471'">x64</PlatformTarget>
+    <PlatformTarget Condition="'$(TargetFramework)'=='net471' OR '$(TargetFramework)'=='net48'">x64</PlatformTarget>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>

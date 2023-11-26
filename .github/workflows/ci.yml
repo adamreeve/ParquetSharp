@@ -236,6 +236,8 @@ jobs:
         include:
         - os: windows-2022
           dotnet: net472
+        - os: windows-2022
+          dotnet: net48
         exclude:
         - os: macos-13-xlarge
           dotnet: netcoreapp3.1
