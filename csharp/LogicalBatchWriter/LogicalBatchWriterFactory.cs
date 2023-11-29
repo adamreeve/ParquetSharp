@@ -17,9 +17,8 @@ namespace ParquetSharp.LogicalBatchWriter
             LogicalWrite<TLogical, TPhysical>.Converter converter,
             int bufferLength)
         {
-            _physicalWriter = physicalWriter;
-            _buffers = new LogicalStreamBuffers<TPhysical>(physicalWriter.ColumnDescriptor, bufferLength);
-            _byteBuffer = byteBuffer;
+            var buffers = new LogicalStreamBuffers<TPhysical>(physicalWriter.ColumnDescriptor, bufferLength);
+            _bufferedWriter = new BufferedWriter<TPhysical>(physicalWriter, buffers, byteBuffer);
             _converter = converter;
         }
 
@@ -31,7 +30,9 @@ namespace ParquetSharp.LogicalBatchWriter
         /// <returns>A batch writer for the top level element type</returns>
         public ILogicalBatchWriter<TElement> GetWriter<TElement>(Node[] schemaNodes)
         {
-            return GetWriter<TElement>(schemaNodes, 0, 0, 0);
+            // Top level writer is wrapped in a root writer to enforce flushing to the physical writer after each batch write
+            return new RootWriter<TElement, TPhysical>(
+                GetWriter<TElement>(schemaNodes, 0, 0, 0), _bufferedWriter);
         }
 
         /// <summary>
@@ -60,7 +61,7 @@ namespace ParquetSharp.LogicalBatchWriter
                 var innerDefinitionLevel = (short) (optional ? definitionLevel + 1 : definitionLevel);
                 return (
                     new ScalarWriter<TLogical, TPhysical>(
-                            _physicalWriter, _buffers, _byteBuffer, _converter,
+                            _bufferedWriter, _converter,
                             innerDefinitionLevel, repetitionLevel, firstRepetitionLevel, optional)
                         as ScalarWriter<TElement, TPhysical>)!;
             }
@@ -120,7 +121,7 @@ namespace ParquetSharp.LogicalBatchWriter
 
             var arrayWriterType = typeof(ArrayWriter<,>).MakeGenericType(containedType, typeof(TPhysical));
             return (ILogicalBatchWriter<TElement>) Activator.CreateInstance(
-                arrayWriterType, writer0, writer1, _physicalWriter, optional,
+                arrayWriterType, writer0, writer1, _bufferedWriter, optional,
                 arrayDefinitionLevel, repetitionLevel, firstRepetitionLevel);
         }
 
@@ -141,7 +142,7 @@ namespace ParquetSharp.LogicalBatchWriter
 
             var nestedWriterType = typeof(NestedWriter<>).MakeGenericType(nestedType);
             return (ILogicalBatchWriter<TElement>) Activator.CreateInstance(
-                nestedWriterType, firstInnerWriter, innerWriter, _buffers.Length);
+                nestedWriterType, firstInnerWriter, innerWriter, _bufferedWriter.MaxBatchLength);
         }
 
         /// <summary>
@@ -162,7 +163,7 @@ namespace ParquetSharp.LogicalBatchWriter
 
             var optionalNestedWriterType = typeof(OptionalNestedWriter<,>).MakeGenericType(nestedType, typeof(TPhysical));
             return (ILogicalBatchWriter<TElement>) Activator.CreateInstance(
-                optionalNestedWriterType, firstInnerWriter, innerWriter, _physicalWriter, _buffers,
+                optionalNestedWriterType, firstInnerWriter, innerWriter, _bufferedWriter,
                 definitionLevel, repetitionLevel, firstRepetitionLevel);
         }
 
@@ -190,9 +191,7 @@ namespace ParquetSharp.LogicalBatchWriter
             });
         }
 
-        private readonly ByteBuffer? _byteBuffer;
         private readonly LogicalWrite<TLogical, TPhysical>.Converter _converter;
-        private readonly ColumnWriter<TPhysical> _physicalWriter;
-        private readonly LogicalStreamBuffers<TPhysical> _buffers;
+        private readonly BufferedWriter<TPhysical> _bufferedWriter;
     }
 }

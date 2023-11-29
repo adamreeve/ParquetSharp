@@ -10,18 +10,14 @@ namespace ParquetSharp.LogicalBatchWriter
         where TPhysical : unmanaged
     {
         public ScalarWriter(
-            ColumnWriter<TPhysical> physicalWriter,
-            LogicalStreamBuffers<TPhysical> buffers,
-            ByteBuffer? byteBuffer,
+            BufferedWriter<TPhysical> bufferedWriter,
             LogicalWrite<TLogical, TPhysical>.Converter converter,
             short definitionLevel,
             short repetitionLevel,
             short firstRepetitionLevel,
             bool optional)
         {
-            _physicalWriter = physicalWriter;
-            _buffers = buffers;
-            _byteBuffer = byteBuffer;
+            _bufferedWriter = bufferedWriter;
             _converter = converter;
 
             _optional = optional;
@@ -38,43 +34,42 @@ namespace ParquetSharp.LogicalBatchWriter
 
             while (rowsWritten < values.Length)
             {
-                var bufferLength = Math.Min(values.Length - rowsWritten, _buffers.Length);
+                var bufferLength = Math.Min(values.Length - rowsWritten, _bufferedWriter.MaxBatchLength);
 
-                _converter(values.Slice(rowsWritten, bufferLength), _buffers.DefLevels, _buffers.Values, nullDefinitionLevel);
+                var buffers = _bufferedWriter.GetBuffers(bufferLength);
 
-                if (_buffers.RepLevels != null)
+                var numValues = _converter(values.Slice(rowsWritten, bufferLength), buffers.DefLevels, buffers.Values, nullDefinitionLevel);
+
+                if (!buffers.RepLevels.IsEmpty)
                 {
                     for (var i = 0; i < bufferLength; ++i)
                     {
-                        _buffers.RepLevels[i] = _repetitionLevel;
+                        buffers.RepLevels[i] = _repetitionLevel;
                     }
                     if (firstWrite)
                     {
-                        _buffers.RepLevels[0] = _firstRepetitionLevel;
+                        buffers.RepLevels[0] = _firstRepetitionLevel;
                     }
                 }
 
-                if (!_optional && _buffers.DefLevels != null)
+                if (!_optional && !buffers.DefLevels.IsEmpty)
                 {
                     // The converter doesn't handle writing definition levels for non-optional values, so write these now
                     for (var i = 0; i < bufferLength; ++i)
                     {
-                        _buffers.DefLevels[i] = _definitionLevel;
+                        buffers.DefLevels[i] = _definitionLevel;
                     }
                 }
 
-                _physicalWriter.WriteBatch(bufferLength, _buffers.DefLevels, _buffers.RepLevels, _buffers.Values);
+                _bufferedWriter.AdvanceBuffers(bufferLength, numValues);
                 rowsWritten += bufferLength;
 
-                _byteBuffer?.Clear();
                 firstWrite = false;
             }
         }
 
-        private readonly ByteBuffer? _byteBuffer;
         private readonly LogicalWrite<TLogical, TPhysical>.Converter _converter;
-        private readonly ColumnWriter<TPhysical> _physicalWriter;
-        private readonly LogicalStreamBuffers<TPhysical> _buffers;
+        private readonly BufferedWriter<TPhysical> _bufferedWriter;
         private readonly short _definitionLevel;
         private readonly short _repetitionLevel;
         private readonly short _firstRepetitionLevel;

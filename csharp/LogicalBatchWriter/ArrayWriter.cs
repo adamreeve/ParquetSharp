@@ -13,7 +13,7 @@ namespace ParquetSharp.LogicalBatchWriter
         public ArrayWriter(
             ILogicalBatchWriter<TItem> firstElementWriter,
             ILogicalBatchWriter<TItem> elementWriter,
-            ColumnWriter<TPhysical> physicalWriter,
+            BufferedWriter<TPhysical> bufferedWriter,
             bool optionalArrays,
             short definitionLevel,
             short repetitionLevel,
@@ -21,7 +21,7 @@ namespace ParquetSharp.LogicalBatchWriter
         {
             _firstElementWriter = firstElementWriter;
             _elementWriter = elementWriter;
-            _physicalWriter = physicalWriter;
+            _bufferedWriter = bufferedWriter;
             _optionalArrays = optionalArrays;
             _definitionLevel = definitionLevel;
             _firstRepetitionLevel = firstRepetitionLevel;
@@ -30,11 +30,9 @@ namespace ParquetSharp.LogicalBatchWriter
 
         public void WriteBatch(ReadOnlySpan<TItem[]> values)
         {
-            var arrayDefinitionLevel = new[] {_definitionLevel};
-            var nullDefinitionLevel = new[] {(short) (_definitionLevel - 1)};
-
+            var nullDefinitionLevel = (short) (_definitionLevel - 1);
             var elementWriter = _firstElementWriter;
-            var arrayRepetitionLevel = new[] {_firstRepetitionLevel};
+            var arrayRepetitionLevel = _firstRepetitionLevel;
 
             for (var i = 0; i < values.Length; ++i)
             {
@@ -48,8 +46,10 @@ namespace ParquetSharp.LogicalBatchWriter
                     else
                     {
                         // Write zero length array
-                        _physicalWriter.WriteBatch(
-                            1, arrayDefinitionLevel, arrayRepetitionLevel, Array.Empty<TPhysical>());
+                        var buffers = _bufferedWriter.GetBuffers(1);
+                        buffers.DefLevels[0] = _definitionLevel;
+                        buffers.RepLevels[0] = arrayRepetitionLevel;
+                        _bufferedWriter.AdvanceBuffers(1, 0);
                     }
                 }
                 else if (!_optionalArrays)
@@ -59,21 +59,23 @@ namespace ParquetSharp.LogicalBatchWriter
                 else
                 {
                     // Write a null array entry
-                    _physicalWriter.WriteBatch(
-                        1, nullDefinitionLevel, arrayRepetitionLevel, Array.Empty<TPhysical>());
+                    var buffers = _bufferedWriter.GetBuffers(1);
+                    buffers.DefLevels[0] = nullDefinitionLevel;
+                    buffers.RepLevels[0] = arrayRepetitionLevel;
+                    _bufferedWriter.AdvanceBuffers(1, 0);
                 }
 
                 if (i == 0)
                 {
                     elementWriter = _elementWriter;
-                    arrayRepetitionLevel[0] = _repetitionLevel;
+                    arrayRepetitionLevel = _repetitionLevel;
                 }
             }
         }
 
         private readonly ILogicalBatchWriter<TItem> _firstElementWriter;
         private readonly ILogicalBatchWriter<TItem> _elementWriter;
-        private readonly ColumnWriter<TPhysical> _physicalWriter;
+        private readonly BufferedWriter<TPhysical> _bufferedWriter;
         private readonly short _firstRepetitionLevel;
         private readonly short _repetitionLevel;
         private readonly short _definitionLevel;

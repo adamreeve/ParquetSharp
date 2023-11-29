@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace ParquetSharp
+namespace ParquetSharp.LogicalBatchReader
 {
     /// <summary>
     /// Buffer the reads from the low-level Parquet API when dealing with array values and multi-level structs.

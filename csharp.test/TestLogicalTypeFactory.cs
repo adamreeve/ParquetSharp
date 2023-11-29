@@ -601,6 +601,8 @@ namespace ParquetSharp.Test
                         {
                             d[i] = s[i].Value;
                         }
+
+                        return s.Length;
                     });
                 }
                 return base.GetConverter<TLogical, TPhysical>(columnDescriptor, byteBuffer);

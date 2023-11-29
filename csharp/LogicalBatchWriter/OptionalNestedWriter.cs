@@ -1,6 +1,4 @@
 using System;
-using System.Linq;
-using ParquetSharp.Schema;
 
 namespace ParquetSharp.LogicalBatchWriter
 {
@@ -13,29 +11,22 @@ namespace ParquetSharp.LogicalBatchWriter
         public OptionalNestedWriter(
             ILogicalBatchWriter<TItem> firstInnerWriter,
             ILogicalBatchWriter<TItem> innerWriter,
-            ColumnWriter<TPhysical> physicalWriter,
-            LogicalStreamBuffers<TPhysical> buffers,
+            BufferedWriter<TPhysical> bufferedWriter,
             short definitionLevel,
             short repetitionLevel,
             short firstRepetitionLevel)
         {
             _firstInnerWriter = firstInnerWriter;
             _innerWriter = innerWriter;
-            _physicalWriter = physicalWriter;
-            _buffers = buffers;
+            _bufferedWriter = bufferedWriter;
             _definitionLevel = definitionLevel;
             _repetitionLevel = repetitionLevel;
             _firstRepetitionLevel = firstRepetitionLevel;
-            _buffer = new TItem[buffers.Length];
+            _buffer = new TItem[_bufferedWriter.MaxBatchLength];
         }
 
         public void WriteBatch(ReadOnlySpan<Nested<TItem>?> values)
         {
-            if (_buffers.DefLevels == null)
-            {
-                throw new Exception("Expected non-null definition levels when writing nullable nested values");
-            }
-
             var nullDefinitionLevel = (short) (_definitionLevel - 1);
             var writer = _firstInnerWriter;
             var offset = 0;
@@ -63,7 +54,7 @@ namespace ParquetSharp.LogicalBatchWriter
                 }
 
                 // Count any null values
-                maxSpanSize = Math.Min(values.Length - offset, _buffers.Length);
+                maxSpanSize = Math.Min(values.Length - offset, _buffer.Length);
                 var nullSpanSize = maxSpanSize;
                 for (var i = 0; i < maxSpanSize; ++i)
                 {
@@ -77,29 +68,27 @@ namespace ParquetSharp.LogicalBatchWriter
 
                 if (nullSpanSize > 0)
                 {
+                    var buffers = _bufferedWriter.GetBuffers(nullSpanSize);
                     // Write a batch of null values
                     for (var i = 0; i < nullSpanSize; ++i)
                     {
-                        _buffers.DefLevels[i] = nullDefinitionLevel;
+                        buffers.DefLevels[i] = nullDefinitionLevel;
                     }
 
-                    if (_buffers.RepLevels != null)
+                    if (!buffers.RepLevels.IsEmpty)
                     {
                         for (var i = 0; i < nullSpanSize; ++i)
                         {
-                            _buffers.RepLevels[i] = _repetitionLevel;
+                            buffers.RepLevels[i] = _repetitionLevel;
                         }
                         if (offset == 0)
                         {
-                            _buffers.RepLevels[0] = _firstRepetitionLevel;
+                            buffers.RepLevels[0] = _firstRepetitionLevel;
                         }
                     }
 
-                    _physicalWriter.WriteBatch(
-                        nullSpanSize,
-                        _buffers.DefLevels.AsSpan(0, nullSpanSize),
-                        _buffers.RepLevels == null ? null : _buffers.RepLevels.AsSpan(0, nullSpanSize),
-                        Array.Empty<TPhysical>());
+                    _bufferedWriter.AdvanceBuffers(nullSpanSize, 0);
+
                     offset += nullSpanSize;
                 }
 
@@ -109,8 +98,7 @@ namespace ParquetSharp.LogicalBatchWriter
 
         private readonly ILogicalBatchWriter<TItem> _firstInnerWriter;
         private readonly ILogicalBatchWriter<TItem> _innerWriter;
-        private readonly ColumnWriter<TPhysical> _physicalWriter;
-        private readonly LogicalStreamBuffers<TPhysical> _buffers;
+        private readonly BufferedWriter<TPhysical> _bufferedWriter;
         private readonly short _definitionLevel;
         private readonly short _repetitionLevel;
         private readonly short _firstRepetitionLevel;
