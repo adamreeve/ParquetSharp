@@ -5,14 +5,14 @@ namespace ParquetSharp
 {
     public sealed class RowGroupMetaData
     {
-        internal RowGroupMetaData(IntPtr handle)
+        internal RowGroupMetaData(IntPtr handle, INativeHandle parentHandle)
         {
-            _handle = handle;
+            _handle = new ChildParquetHandle(handle, parentHandle);
         }
 
         public int NumColumns => ExceptionInfo.Return<int>(_handle, RowGroupMetaData_Num_Columns);
         public long NumRows => ExceptionInfo.Return<long>(_handle, RowGroupMetaData_Num_Rows);
-        public SchemaDescriptor Schema => _schema ??= new SchemaDescriptor(ExceptionInfo.Return<IntPtr>(_handle, RowGroupMetaData_Schema));
+        public SchemaDescriptor Schema => _schema ??= new SchemaDescriptor(ExceptionInfo.Return<IntPtr>(_handle, RowGroupMetaData_Schema), _handle);
         public long TotalByteSize => ExceptionInfo.Return<long>(_handle, RowGroupMetaData_Total_Byte_Size);
 
         public ColumnChunkMetaData GetColumnChunkMetaData(int i)
@@ -35,7 +35,7 @@ namespace ParquetSharp
         [DllImport(ParquetDll.Name)]
         private static extern IntPtr RowGroupMetaData_Total_Byte_Size(IntPtr rowGroupMetaData, out long totalByteSize);
 
-        private readonly IntPtr _handle;
+        private readonly ChildParquetHandle _handle;
         private SchemaDescriptor? _schema;
     }
 }

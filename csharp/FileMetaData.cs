@@ -38,7 +38,7 @@ namespace ParquetSharp
         public long NumRows => ExceptionInfo.Return<long>(_handle, FileMetaData_Num_Rows);
         public int NumRowGroups => ExceptionInfo.Return<int>(_handle, FileMetaData_Num_Row_Groups);
         public int NumSchemaElements => ExceptionInfo.Return<int>(_handle, FileMetaData_Num_Schema_Elements);
-        public SchemaDescriptor Schema => _schema ??= new SchemaDescriptor(ExceptionInfo.Return<IntPtr>(_handle, FileMetaData_Schema));
+        public SchemaDescriptor Schema => _schema ??= new SchemaDescriptor(ExceptionInfo.Return<IntPtr>(_handle, FileMetaData_Schema), _handle);
         public int Size => ExceptionInfo.Return<int>(_handle, FileMetaData_Size);
         public ParquetVersion Version => ExceptionInfo.Return<ParquetVersion>(_handle, FileMetaData_Version);
         public ApplicationVersion WriterVersion => new ApplicationVersion(ExceptionInfo.Return<AppVer>(_handle, FileMetaData_Writer_Version));

@@ -6,9 +6,9 @@ namespace ParquetSharp
 {
     public sealed class SchemaDescriptor
     {
-        internal SchemaDescriptor(IntPtr schemaDescriptorHandle)
+        internal SchemaDescriptor(IntPtr schemaDescriptorHandle, INativeHandle parentHandle)
         {
-            _handle = schemaDescriptorHandle;
+            _handle = new ChildParquetHandle(schemaDescriptorHandle, parentHandle);
         }
 
         public GroupNode GroupNode => (GroupNode) (Node.Create(ExceptionInfo.Return<IntPtr>(_handle, SchemaDescriptor_Group_Node)) ?? throw new InvalidOperationException());
@@ -18,7 +18,7 @@ namespace ParquetSharp
 
         public ColumnDescriptor Column(int i)
         {
-            return new(ExceptionInfo.Return<int, IntPtr>(_handle, i, SchemaDescriptor_Column));
+            return new(ExceptionInfo.Return<int, IntPtr>(_handle, i, SchemaDescriptor_Column), _handle);
         }
 
         public int ColumnIndex(Node node)
@@ -62,6 +62,6 @@ namespace ParquetSharp
         [DllImport(ParquetDll.Name)]
         private static extern IntPtr SchemaDescriptor_Schema_Root(IntPtr descriptor, out IntPtr schemaRoot);
 
-        private readonly IntPtr _handle;
+        private readonly ChildParquetHandle _handle;
     }
 }

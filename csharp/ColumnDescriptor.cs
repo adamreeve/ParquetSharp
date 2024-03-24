@@ -13,9 +13,9 @@ namespace ParquetSharp
     /// </summary>
     public sealed class ColumnDescriptor
     {
-        internal ColumnDescriptor(IntPtr handle)
+        internal ColumnDescriptor(IntPtr handle, INativeHandle parentHandle)
         {
-            _handle = handle;
+            _handle = new ChildParquetHandle(handle, parentHandle);
         }
 
         public ColumnOrder ColumnOrder => ExceptionInfo.Return<ColumnOrder>(_handle, ColumnDescriptor_ColumnOrder);
@@ -179,6 +179,6 @@ namespace ParquetSharp
 
         private static readonly ConcurrentDictionary<(Type physicalType, Type logicalType, Type elementType, Type returnType), Delegate> VisitorCache = new();
 
-        private readonly IntPtr _handle;
+        private readonly ChildParquetHandle _handle;
     }
 }

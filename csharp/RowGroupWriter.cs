@@ -5,9 +5,9 @@ namespace ParquetSharp
 {
     public sealed class RowGroupWriter : IDisposable
     {
-        internal RowGroupWriter(IntPtr handle, ParquetFileWriter parquetFileWriter)
+        internal RowGroupWriter(IntPtr handle, INativeHandle parentHandle, ParquetFileWriter parquetFileWriter)
         {
-            _handle = handle;
+            _handle = new ChildParquetHandle(handle, parentHandle);
             ParquetFileWriter = parquetFileWriter;
         }
 
@@ -19,7 +19,7 @@ namespace ParquetSharp
 
         public void Close()
         {
-            ExceptionInfo.Check(RowGroupWriter_Close(_handle));
+            ExceptionInfo.Check(RowGroupWriter_Close(_handle.IntPtr));
         }
 
         public int CurrentColumn => ExceptionInfo.Return<int>(_handle, RowGroupWriter_Current_Column);
@@ -31,12 +31,12 @@ namespace ParquetSharp
 
         public ColumnWriter Column(int i)
         {
-            return ColumnWriter.Create(ExceptionInfo.Return<int, IntPtr>(_handle, i, RowGroupWriter_Column), this, i);
+            return ColumnWriter.Create(ExceptionInfo.Return<int, IntPtr>(_handle, i, RowGroupWriter_Column), _handle, this, i);
         }
 
         public ColumnWriter NextColumn()
         {
-            return ColumnWriter.Create(ExceptionInfo.Return<IntPtr>(_handle, RowGroupWriter_NextColumn), this, CurrentColumn);
+            return ColumnWriter.Create(ExceptionInfo.Return<IntPtr>(_handle, RowGroupWriter_NextColumn), _handle, this, CurrentColumn);
         }
 
         [DllImport(ParquetDll.Name)]
@@ -66,7 +66,7 @@ namespace ParquetSharp
         [DllImport(ParquetDll.Name)]
         private static extern IntPtr RowGroupWriter_Buffered(IntPtr rowGroupWriter, out bool buffered);
 
-        private readonly IntPtr _handle;
+        private readonly ChildParquetHandle _handle;
         internal readonly ParquetFileWriter ParquetFileWriter;
     }
 }

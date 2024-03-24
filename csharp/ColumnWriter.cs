@@ -8,8 +8,9 @@ namespace ParquetSharp
     /// </summary>
     public abstract class ColumnWriter : IDisposable
     {
-        internal static ColumnWriter Create(IntPtr handle, RowGroupWriter rowGroupWriter, int columnIndex)
+        internal static ColumnWriter Create(IntPtr pointer, INativeHandle parentHandle, RowGroupWriter rowGroupWriter, int columnIndex)
         {
+            var handle = new ChildParquetHandle(pointer, parentHandle);
             var type = ExceptionInfo.Return<PhysicalType>(handle, ColumnWriter_Type);
 
             switch (type)
@@ -35,7 +36,7 @@ namespace ParquetSharp
             }
         }
 
-        internal ColumnWriter(IntPtr handle, RowGroupWriter rowGroupWriter, int columnIndex)
+        internal ColumnWriter(ChildParquetHandle handle, RowGroupWriter rowGroupWriter, int columnIndex)
         {
             _handle = handle;
             RowGroupWriter = rowGroupWriter;
@@ -57,7 +58,7 @@ namespace ParquetSharp
         public LogicalTypeFactory LogicalTypeFactory => RowGroupWriter.ParquetFileWriter.LogicalTypeFactory;
         public LogicalWriteConverterFactory LogicalWriteConverterFactory => RowGroupWriter.ParquetFileWriter.LogicalWriteConverterFactory;
 
-        public ColumnDescriptor ColumnDescriptor => new(ExceptionInfo.Return<IntPtr>(Handle, ColumnWriter_Descr));
+        public ColumnDescriptor ColumnDescriptor => new(ExceptionInfo.Return<IntPtr>(Handle, ColumnWriter_Descr), _handle);
         public long RowWritten => ExceptionInfo.Return<long>(Handle, ColumnWriter_Rows_Written);
         public PhysicalType Type => ExceptionInfo.Return<PhysicalType>(Handle, ColumnWriter_Type);
         public WriterProperties WriterProperties => new(ExceptionInfo.Return<IntPtr>(Handle, ColumnWriter_Properties));
@@ -173,18 +174,18 @@ namespace ParquetSharp
                     }
                 }
 
-                return _handle;
+                return _handle.IntPtr;
             }
         }
 
-        private readonly IntPtr _handle;
+        private readonly ChildParquetHandle _handle;
         internal readonly RowGroupWriter RowGroupWriter;
     }
 
     /// <inheritdoc />
     public sealed class ColumnWriter<TValue> : ColumnWriter where TValue : unmanaged
     {
-        internal ColumnWriter(IntPtr handle, RowGroupWriter rowGroupWriter, int columnIndex)
+        internal ColumnWriter(ChildParquetHandle handle, RowGroupWriter rowGroupWriter, int columnIndex)
             : base(handle, rowGroupWriter, columnIndex)
         {
         }

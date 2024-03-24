@@ -64,7 +64,7 @@ namespace ParquetSharp
         public LogicalTypeFactory LogicalTypeFactory => RowGroupReader.ParquetFileReader.LogicalTypeFactory;
         public LogicalReadConverterFactory LogicalReadConverterFactory => RowGroupReader.ParquetFileReader.LogicalReadConverterFactory;
 
-        public ColumnDescriptor ColumnDescriptor => new(ExceptionInfo.Return<IntPtr>(Handle, ColumnReader_Descr));
+        public ColumnDescriptor ColumnDescriptor => new(ExceptionInfo.Return<IntPtr>(Handle, ColumnReader_Descr), Handle);
         public bool HasNext => ExceptionInfo.Return<bool>(Handle, ColumnReader_HasNext);
         public PhysicalType Type => ExceptionInfo.Return<PhysicalType>(Handle, ColumnReader_Type);
 
