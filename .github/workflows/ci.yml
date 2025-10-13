@@ -137,6 +137,11 @@ jobs:
         docker exec -w $PWD -e GITHUB_ACTIONS -e VCPKG_INSTALLATION_ROOT centos \
           scl enable devtoolset-10 rh-git227 httpd24 -- \
           sh -c 'PATH=$(uv tool dir --bin):$PATH ./build_unix.sh'
+    - name: Setup tmate session
+      if: matrix.os == 'ubuntu-22.04' && failure()
+      uses: mxschmitt/action-tmate@v3
+      with:
+        limit-access-to-actor: true
     - name: Compile native ParquetSharp library (macOS)
       if: runner.os == 'macOS'
       run: ./build_unix.sh
